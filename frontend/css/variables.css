@@ -1,0 +1,147 @@
+/* ===================================================================
+   SchemaSay — CSS Design Tokens
+   =================================================================== */
+
+:root {
+  /* ---------- Forest Green Palette (Sidebar) ---------- */
+  --forest-900: #032E27;
+  --forest-800: #042F2A;
+  --forest-700: #064E3B;
+  --forest-600: #075E49;
+  --forest-500: #0B6B57;
+  --forest-400: #1A7D68;
+
+  /* ---------- Accent Colors ---------- */
+  --teal:   #1AAE9F;
+  --gold:   #E7A72F;
+  --orange: #F59E0B;
+  --coral:  #EF6A5E;
+  --sage:   #A8C99B;
+
+  /* ---------- Workspace Backgrounds ---------- */
+  --ivory-50:  #FDFCF8;
+  --ivory-100: #FAF9F4;
+  --ivory-200: #F7F5EE;
+  --cream:     #F1EFE5;
+  --cream-dark: #EAE7DA;
+
+  /* ---------- Text ---------- */
+  --text-primary:   #101817;
+  --text-secondary: #66736F;
+  --text-muted:     #94A3A0;
+  --text-on-dark:   rgba(255, 255, 255, 0.92);
+  --text-on-dark-muted: rgba(255, 255, 255, 0.55);
+
+  /* ---------- Borders ---------- */
+  --border:       #DDE3DC;
+  --border-light: #EEF0ED;
+  --border-dark:  #C8D0C7;
+
+  /* ---------- Status ---------- */
+  --success:     #15803D;
+  --success-bg:  #F0FDF4;
+  --success-border: #BBF7D0;
+  --error:       #DC2626;
+  --error-bg:    #FEF2F2;
+  --error-border: #FECACA;
+  --warning:     #D97706;
+  --warning-bg:  #FFFBEB;
+  --warning-border: #FDE68A;
+  --info:        #2563EB;
+  --info-bg:     #EFF6FF;
+
+  /* ---------- Sidebar Design Tokens ---------- */
+  --sidebar-bg:          var(--forest-700);
+  --sidebar-text:        var(--text-on-dark);
+  --sidebar-text-muted:  var(--text-on-dark-muted);
+  --sidebar-active-bg:   rgba(255, 255, 255, 0.13);
+  --sidebar-hover-bg:    rgba(255, 255, 255, 0.07);
+  --sidebar-border:      rgba(255, 255, 255, 0.10);
+  --sidebar-divider:     rgba(255, 255, 255, 0.08);
+  --sidebar-icon-color:  rgba(255, 255, 255, 0.60);
+
+  /* ---------- Typography ---------- */
+  --font-display: 'Outfit', system-ui, sans-serif;
+  --font-body:    'Inter', system-ui, sans-serif;
+  --font-mono:    'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+
+  --text-xs:   0.6875rem;  /* 11px */
+  --text-sm:   0.75rem;    /* 12px */
+  --text-base: 0.8125rem;  /* 13px */
+  --text-md:   0.875rem;   /* 14px */
+  --text-lg:   1rem;       /* 16px */
+  --text-xl:   1.125rem;   /* 18px */
+  --text-2xl:  1.25rem;    /* 20px */
+  --text-3xl:  1.5rem;     /* 24px */
+
+  /* ---------- Spacing Scale ---------- */
+  --sp-1:  4px;
+  --sp-2:  8px;
+  --sp-3:  12px;
+  --sp-4:  16px;
+  --sp-5:  20px;
+  --sp-6:  24px;
+  --sp-8:  32px;
+  --sp-10: 40px;
+  --sp-12: 48px;
+  --sp-16: 64px;
+
+  /* ---------- Border Radius ---------- */
+  --radius-sm:   4px;
+  --radius-md:   8px;
+  --radius-lg:   12px;
+  --radius-xl:   16px;
+  --radius-2xl:  20px;
+  --radius-full: 9999px;
+
+  /* ---------- Shadows ---------- */
+  --shadow-xs: 0 1px 2px rgba(16, 24, 23, 0.05);
+  --shadow-sm: 0 1px 4px rgba(16, 24, 23, 0.08);
+  --shadow-md: 0 2px 8px rgba(16, 24, 23, 0.08), 0 1px 2px rgba(16, 24, 23, 0.06);
+  --shadow-lg: 0 4px 20px rgba(16, 24, 23, 0.10), 0 2px 4px rgba(16, 24, 23, 0.06);
+  --shadow-xl: 0 8px 40px rgba(16, 24, 23, 0.12), 0 4px 8px rgba(16, 24, 23, 0.08);
+
+  /* ---------- Transitions ---------- */
+  --transition-fast:   150ms ease;
+  --transition-base:   200ms ease;
+  --transition-slow:   300ms ease;
+  --transition-bounce: 250ms cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* ---------- Layout Dimensions ---------- */
+  --sidebar-width:    240px;
+  --header-height:    64px;
+  --schema-width:     300px;
+  --workspace-gap:    0px;
+
+  /* ---------- Z-index Scale ---------- */
+  --z-base:    1;
+  --z-dropdown: 100;
+  --z-sticky:  200;
+  --z-modal:   300;
+  --z-toast:   400;
+}
+
+/* ===== DARK THEME ===== */
+[data-theme="dark"] {
+  --ivory-50:   #0D1714;
+  --ivory-100:  #0F1B18;
+  --ivory-200:  #141E1B;
+  --cream:      #1A2420;
+  --cream-dark: #1E2C29;
+
+  --text-primary:   #E8EFED;
+  --text-secondary: #88A09C;
+  --text-muted:     #607470;
+
+  --border:       #243230;
+  --border-light: #1C2A27;
+  --border-dark:  #2D3F3C;
+
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.20);
+  --shadow-sm: 0 1px 4px rgba(0, 0, 0, 0.25);
+  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.30);
+  --shadow-lg: 0 4px 20px rgba(0, 0, 0, 0.35);
+
+  --success-bg: rgba(21, 128, 61, 0.12);
+  --error-bg:   rgba(220, 38, 38, 0.12);
+}
