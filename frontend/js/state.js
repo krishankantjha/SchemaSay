@@ -1,0 +1,163 @@
+/**
+ * SchemaSay — Centralized Application State
+ * Single source of truth for all UI state.
+ */
+
+const AppState = (() => {
+  // ----- Core State Object -----
+  const _state = {
+    user: null,
+    authToken: null,
+
+    activeConnection: null,
+    connections: [],
+
+    schema: {},          // { tableName: [{ name, type, pk, fk }] }
+    selectedTable: null,
+
+    currentQuery: null,  // The current SQL string in the editor
+    queryResult: null,   // { columns, rows, rowCount, executionTime, chartConfig }
+    queryHistory: [],
+
+    currentView: 'dashboard',   // dashboard | workbench | connections | schema | history | insights | settings
+    currentDashboardMode: 'copilot',  // copilot | workbench
+
+    isExecuting: false,
+    isLoadingSchema: false,
+    isGeneratingInsights: false,
+    isSyncingSchema: false,
+
+    insights: [],
+    currentInsight: null,
+
+    theme: 'light',   // light | dark
+
+    processingStages: [],  // For AI copilot stage animation
+  };
+
+  // ----- Subscribers -----
+  const _subscribers = {};
+
+  // ----- Internal Helpers -----
+  function _notify(key) {
+    if (_subscribers[key]) {
+      _subscribers[key].forEach(fn => fn(_state[key], _state));
+    }
+    // Always notify wildcard listeners
+    if (_subscribers['*']) {
+      _subscribers['*'].forEach(fn => fn(key, _state[key], _state));
+    }
+  }
+
+  // ----- Public API -----
+  return {
+    /**
+     * Get the full state snapshot
+     */
+    getState() {
+      return { ..._state };
+    },
+
+    /**
+     * Get a single state key
+     */
+    get(key) {
+      return _state[key];
+    },
+
+    /**
+     * Set one or more state keys and notify subscribers
+     */
+    set(updates) {
+      const changedKeys = [];
+      Object.entries(updates).forEach(([key, value]) => {
+        if (_state[key] !== value) {
+          _state[key] = value;
+          changedKeys.push(key);
+        }
+      });
+      changedKeys.forEach(key => _notify(key));
+      return this;
+    },
+
+    /**
+     * Subscribe to a specific key change
+     * @param {string} key - state key or '*' for all
+     * @param {Function} fn - callback
+     * @returns {Function} - unsubscribe function
+     */
+    subscribe(key, fn) {
+      if (!_subscribers[key]) _subscribers[key] = [];
+      _subscribers[key].push(fn);
+      return () => {
+        _subscribers[key] = _subscribers[key].filter(f => f !== fn);
+      };
+    },
+
+    /**
+     * Reset state (on logout)
+     */
+    reset() {
+      const keysToReset = [
+        'user', 'authToken', 'activeConnection', 'connections',
+        'schema', 'selectedTable', 'currentQuery', 'queryResult',
+        'queryHistory', 'insights', 'currentInsight',
+        'isExecuting', 'isLoadingSchema', 'isGeneratingInsights', 'isSyncingSchema',
+        'processingStages',
+      ];
+      const resetObj = {};
+      keysToReset.forEach(k => {
+        if (Array.isArray(_state[k])) resetObj[k] = [];
+        else if (typeof _state[k] === 'boolean') resetObj[k] = false;
+        else if (typeof _state[k] === 'object' && _state[k] !== null) resetObj[k] = {};
+        else resetObj[k] = null;
+      });
+      this.set(resetObj);
+    },
+
+    /**
+     * Persist theme to localStorage
+     */
+    saveTheme(theme) {
+      this.set({ theme });
+      try { localStorage.setItem('ss_theme', theme); } catch(e) {}
+    },
+
+    /**
+     * Load persisted theme
+     */
+    loadTheme() {
+      try {
+        const t = localStorage.getItem('ss_theme');
+        if (t === 'dark' || t === 'light') this.set({ theme: t });
+      } catch(e) {}
+    },
+
+    /**
+     * Persist auth token
+     */
+    saveToken(token) {
+      this.set({ authToken: token });
+      try { sessionStorage.setItem('ss_token', token); } catch(e) {}
+    },
+
+    /**
+     * Load persisted token
+     */
+    loadToken() {
+      try {
+        const t = sessionStorage.getItem('ss_token');
+        if (t) this.set({ authToken: t });
+        return t;
+      } catch(e) { return null; }
+    },
+
+    /**
+     * Clear persisted token
+     */
+    clearToken() {
+      this.set({ authToken: null });
+      try { sessionStorage.removeItem('ss_token'); } catch(e) {}
+    },
+  };
+})();
