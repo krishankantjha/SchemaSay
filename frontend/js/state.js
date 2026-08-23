@@ -8,6 +8,7 @@ const AppState = (() => {
   const _state = {
     user: null,
     authToken: null,
+    refreshToken: null,
 
     activeConnection: null,
     connections: [],
@@ -15,7 +16,8 @@ const AppState = (() => {
     schema: {},          // { tableName: [{ name, type, pk, fk }] }
     selectedTable: null,
 
-    currentQuery: null,  // The current SQL string in the editor
+    currentQuery: null,  // The current natural-language question or SQL fallback
+    currentSql: null,
     queryResult: null,   // { columns, rows, rowCount, executionTime, chartConfig }
     queryHistory: [],
 
@@ -99,8 +101,9 @@ const AppState = (() => {
      */
     reset() {
       const keysToReset = [
-        'user', 'authToken', 'activeConnection', 'connections',
-        'schema', 'selectedTable', 'currentQuery', 'queryResult',
+        'user', 'authToken', 'refreshToken', 'activeConnection',
+ 'connections',
+        'schema', 'selectedTable', 'currentQuery', 'currentSql', 'queryResult',
         'queryHistory', 'insights', 'currentInsight',
         'isExecuting', 'isLoadingSchema', 'isGeneratingInsights', 'isSyncingSchema',
         'processingStages',
@@ -141,13 +144,20 @@ const AppState = (() => {
       try { sessionStorage.setItem('ss_token', token); } catch(e) {}
     },
 
+    saveRefreshToken(token) {
+      this.set({ refreshToken: token });
+      try { sessionStorage.setItem('ss_refresh_token', token); } catch(e) {}
+    },
+
     /**
      * Load persisted token
      */
     loadToken() {
       try {
         const t = sessionStorage.getItem('ss_token');
+        const r = sessionStorage.getItem('ss_refresh_token');
         if (t) this.set({ authToken: t });
+        if (r) this.set({ refreshToken: r });
         return t;
       } catch(e) { return null; }
     },
@@ -156,8 +166,11 @@ const AppState = (() => {
      * Clear persisted token
      */
     clearToken() {
-      this.set({ authToken: null });
-      try { sessionStorage.removeItem('ss_token'); } catch(e) {}
+      this.set({ authToken: null, refreshToken: null });
+      try {
+        sessionStorage.removeItem('ss_token');
+        sessionStorage.removeItem('ss_refresh_token');
+      } catch(e) {}
     },
   };
 })();

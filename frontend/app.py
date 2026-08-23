@@ -3,6 +3,7 @@ SchemaSay — Streamlit Cloud Entry Point
 Bundles and renders the production Vanilla HTML/CSS/JS frontend inside Streamlit Cloud.
 """
 
+import json
 import os
 import re
 import pathlib
@@ -45,6 +46,12 @@ def get_bundled_html():
         return "<h1>Error: index.html not found</h1>"
 
     html_content = index_path.read_text(encoding="utf-8")
+    config = {
+        "demoMode": os.getenv("SCHEMASAY_DEMO_MODE", "false").strip().lower() == "true",
+        "apiBaseUrl": os.getenv("SCHEMASAY_API_BASE_URL", "http://localhost:8000/api/v1"),
+    }
+    config_script = f"<script>window.SCHEMASAY_CONFIG = {json.dumps(config)};</script>"
+    html_content = html_content.replace("</head>", f"{config_script}</head>", 1)
 
     # Replace local CSS links with inlined <style> blocks
     def replace_css(match):

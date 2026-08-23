@@ -5,6 +5,20 @@
 const InsightsPage = (() => {
 
   function render(container) {
+    if (!DEMO_MODE) {
+      container.innerHTML = `
+        <div class="page-view">
+          <div class="page-header">
+            <h1 class="page-title">Data Insights</h1>
+            <p class="page-subtitle">Run a query to populate insights from your connected database.</p>
+          </div>
+          <div class="state-empty">
+            <p class="state-empty-title">No live overview data yet</p>
+            <p class="state-empty-desc">The overview dashboard is populated from query results and is not seeded with demo data in production.</p>
+          </div>
+        </div>`;
+      return;
+    }
     const kpis = DEMO.kpis;
     const revenueData = DEMO.revenueData;
     const regionData  = DEMO.regionData;
@@ -227,7 +241,7 @@ const Workbench = (() => {
         chartConfig: data.chart_config,
       };
 
-      AppState.set({ queryResult: results, currentQuery: sql });
+      AppState.set({ queryResult: results, currentSql: sql, currentQuery: 'Manual SQL Editor Query' });
 
       if (resultsContainer) {
         resultsContainer.style.display = 'block';

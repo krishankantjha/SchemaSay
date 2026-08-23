@@ -139,15 +139,22 @@ const History = (() => {
     // Bind actions
     container.querySelectorAll('.history-rerun-btn').forEach(btn => {
       btn.addEventListener('click', () => {
-        const entry = history.find(h => h.id === btn.dataset.id);
+        const entry = history.find(h => String(h.id) === String(btn.dataset.id));
         if (entry) _rerun(entry);
       });
     });
   }
 
   function _rerun(entry) {
-    if (entry.question) {
-      // Load into AI Copilot
+    if (entry.query_type === 'direct_sql' || entry.question === 'Manual SQL Editor Query') {
+      // Load direct SQL into the workbench
+      Router.navigate('workbench');
+      setTimeout(() => {
+        const wb = window._workbenchEditor;
+        if (wb) wb.setValue(entry.sql_query || '');
+      }, 300);
+    } else if (entry.question) {
+      // Load assistant question into AI Copilot
       Router.navigate('dashboard');
       setTimeout(() => {
         const input = document.getElementById('copilot-input');
@@ -156,13 +163,6 @@ const History = (() => {
           input.focus();
         }
       }, 200);
-    } else if (entry.sql_query) {
-      // Load into workbench
-      Router.navigate('workbench');
-      setTimeout(() => {
-        const wb = window._workbenchEditor;
-        if (wb) wb.setValue(entry.sql_query);
-      }, 300);
     }
   }
 

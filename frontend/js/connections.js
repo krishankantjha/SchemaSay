@@ -81,7 +81,7 @@ const Connections = (() => {
           <div class="connection-db-icon">${_getDbIcon(conn.db_type)}</div>
           <div class="connection-card-info">
             <div class="connection-card-name">${DOM.escape(conn.name)}</div>
-            <div class="connection-card-type">${dbTypeLabels[conn.db_type] || conn.db_type}</div>
+            <div class="connection-card-type">${DOM.escape(dbTypeLabels[conn.db_type] || conn.db_type || 'Unknown')}</div>
           </div>
           <span class="connection-status-badge ${conn.connected ? 'connected' : 'disconnected'}">
             <span style="width:6px;height:6px;border-radius:50%;background:currentColor;display:inline-block;"></span>
@@ -339,6 +339,10 @@ const Connections = (() => {
       const btn  = document.getElementById('upload-submit-btn');
 
       if (!file) { Toast.warning('Please select a file to upload.'); return; }
+      if (file.size > 10_000_000) {
+        Toast.warning('Files must be at most 10 MB.');
+        return;
+      }
 
       Loading.setButton(btn, 'Uploading...');
       try {

@@ -212,11 +212,28 @@ const Charts = (() => {
     if (!chartConfig || !rows?.length) return;
 
     const { chart_type, x_axis, y_axis, title } = chartConfig;
-    const labels = rows.map(r => r[x_axis] ?? '');
-    const data   = rows.map(r => parseFloat(r[y_axis]) || 0);
-    const type   = chart_type === 'bar' ? 'bar' : chart_type === 'line' ? 'line' : 'doughnut';
+    const visibleRows = rows.slice(0, 5000);
+    if (chart_type === 'scatter') {
+      const points = visibleRows.map(row => ({
+        x: Number(row[x_axis]),
+        y: Number(row[y_axis]),
+      })).filter(point => Number.isFinite(point.x) && Number.isFinite(point.y));
+      return render(canvasId, 'scatter', points, points, y_axis, title);
+    }
 
-    return render(canvasId, type, labels, data, y_axis, title);
+    const valueAxis = chart_type === 'histogram' ? x_axis : y_axis;
+    const labels = visibleRows.map(row => String(row[x_axis] ?? ''));
+    const data = visibleRows.map(row => {
+      const value = Number(row[valueAxis]);
+      return Number.isFinite(value) ? value : 0;
+    });
+    const type = chart_type === 'bar' ? 'bar'
+      : chart_type === 'line' ? 'line'
+      : chart_type === 'pie' ? 'pie'
+      : chart_type === 'histogram' ? 'bar'
+      : 'bar';
+
+    return render(canvasId, type, labels, data, valueAxis || 'Value', title);
   }
 
   /**

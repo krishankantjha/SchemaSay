@@ -292,8 +292,8 @@ const QueryResults = (() => {
 
     try {
       const question = AppState.get('currentQuery') || 'Analyze the results';
-      const data = await api.generateInsights(rows, columns, question);
-      const insights = data.insights || [];
+      const data = await api.generateInsights(rows, columns, question, AppState.get('currentSql') || 'SELECT results');
+      const insights = Array.isArray(data.insights) ? data.insights : (data.insight ? [data.insight] : []);
 
       AppState.set({ insights });
 

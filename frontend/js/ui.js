@@ -35,15 +35,26 @@ const Toast = (() => {
       info:    '#1AAE9F',
     };
 
+    const safeType = colors[type] ? type : 'info';
     const toast = document.createElement('div');
-    toast.className = `toast toast-${type}`;
-    toast.innerHTML = `
-      <span class="toast-icon" style="color:${colors[type]}">${icons[type]}</span>
-      <span class="toast-message">${message}</span>
-      <button class="toast-close" aria-label="Dismiss">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-      </button>
-    `;
+    toast.className = `toast toast-${safeType}`;
+
+    const icon = document.createElement('span');
+    icon.className = 'toast-icon';
+    icon.style.color = colors[safeType];
+    icon.innerHTML = icons[safeType];
+
+    const messageEl = document.createElement('span');
+    messageEl.className = 'toast-message';
+    messageEl.textContent = String(message ?? '');
+
+    const close = document.createElement('button');
+    close.className = 'toast-close';
+    close.type = 'button';
+    close.setAttribute('aria-label', 'Dismiss');
+    close.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
+
+    toast.append(icon, messageEl, close);
 
     const dismiss = () => {
       toast.classList.add('removing');

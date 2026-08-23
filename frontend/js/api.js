@@ -8,8 +8,9 @@
 // CONFIGURATION
 // ============================================================
 
-const DEMO_MODE = true;  // Set to false to use real FastAPI backend
-const API_BASE_URL = 'http://localhost:8000/api/v1';
+const FRONTEND_CONFIG = window.SCHEMASAY_CONFIG || {};
+const DEMO_MODE = FRONTEND_CONFIG.demoMode === true;
+const API_BASE_URL = FRONTEND_CONFIG.apiBaseUrl || 'http://localhost:8000/api/v1';
 
 // ============================================================
 // DEMO DATA
@@ -113,7 +114,22 @@ LIMIT 5;`,
 // HTTP HELPER
 // ============================================================
 
-async function _fetch(endpoint, options = {}) {
+async function _refreshAccessToken() {
+  const refreshToken = AppState.get('refreshToken');
+  if (!refreshToken) return false;
+  const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refresh_token: refreshToken }),
+  });
+  if (!response.ok) return false;
+  const data = await response.json();
+  AppState.saveToken(data.access_token);
+  AppState.saveRefreshToken(data.refresh_token);
+  return true;
+}
+
+async function _fetch(endpoint, options = {}, allowRefresh = true) {
   const token = AppState.get('authToken');
   const headers = { 'Content-Type': 'application/json', ...options.headers };
   if (token) headers['Authorization'] = `Bearer ${token}`;
@@ -121,6 +137,9 @@ async function _fetch(endpoint, options = {}) {
   try {
     const response = await fetch(`${API_BASE_URL}${endpoint}`, { ...options, headers });
 
+    if (response.status === 401 && allowRefresh && !endpoint.startsWith('/auth/')) {
+      if (await _refreshAccessToken()) return _fetch(endpoint, options, false);
+    }
     if (response.status === 401) {
       AppState.clearToken();
       window.location.hash = '#login';
@@ -364,14 +383,14 @@ const api = {
 
   // ---- AI Insights ----
 
-  async generateInsights(rows, columns, question) {
+  async generateInsights(rows, columns, question, sqlQuery = '') {
     if (DEMO_MODE) {
       await _delay(1500);
       return { insights: DEMO.insights };
     }
     return _fetch('/insights/generate', {
       method: 'POST',
-      body: JSON.stringify({ rows, columns, question }),
+      body: JSON.stringify({ rows, columns, question, sql_query: sqlQuery || 'SELECT results' }),
     });
   },
 

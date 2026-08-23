@@ -86,6 +86,7 @@ const Auth = (() => {
     try {
       const data = await api.login(email, password);
       AppState.saveToken(data.access_token);
+      AppState.saveRefreshToken(data.refresh_token);
 
       // Load user profile
       const user = await api.getMe();
@@ -140,6 +141,7 @@ const Auth = (() => {
       // Auto-login after registration
       const data = await api.login(email, password);
       AppState.saveToken(data.access_token);
+      AppState.saveRefreshToken(data.refresh_token);
 
       const user = await api.getMe();
       AppState.set({ user });

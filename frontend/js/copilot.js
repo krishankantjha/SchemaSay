@@ -151,7 +151,7 @@ const Copilot = (() => {
         chartConfig: data.chart_config,
       };
 
-      AppState.set({ queryResult: results });
+      AppState.set({ queryResult: results, currentSql: data.sql || '' });
 
       if (resultsWrap) {
         resultsWrap.style.display = 'block';
@@ -201,6 +201,7 @@ const Copilot = (() => {
       id: `h-${Date.now()}`,
       question,
       sql_query: sql,
+      query_type: question === 'Manual SQL Editor Query' ? 'direct_sql' : 'assistant',
       status,
       execution_duration_ms: durationMs,
       connection_name: conn?.name || 'Unknown',
