@@ -1,5 +1,10 @@
 import os
-os.environ["TESTING"] = "True"  # Disable rate limits during testing
+
+os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
+os.environ.setdefault("SECRET_KEY", "test-secret-key-0123456789-0123456789")
+os.environ.setdefault("ENCRYPTION_KEY", "7c2w6QFqE7d3hK2x5uXvGmYwQ8rTnZpL0sA1bC2dE3f=")
+os.environ["TESTING"] = "True"
+os.environ["ALLOWED_SQLITE_ROOTS"] = os.getcwd()
 
 import pytest
 from sqlalchemy import create_engine

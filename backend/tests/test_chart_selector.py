@@ -1,4 +1,3 @@
-import pytest
 from app.core.visualization.chart_service import select_chart_type
 
 def test_chart_selector_line():

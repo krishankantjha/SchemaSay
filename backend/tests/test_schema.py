@@ -1,10 +1,9 @@
 import os
 import io
-import pytest
 from fastapi import status
 from sqlalchemy import create_engine, text
 from app.core.schema.introspector import reflect_database_schema
-from app.models.connection import DatabaseConnection, DatabaseSchemaCache
+from app.models.connection import DatabaseSchemaCache
 
 def test_reflect_database_schema_keys_mapping():
     """

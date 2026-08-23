@@ -1,10 +1,9 @@
 import os
 import uuid
-import pytest
 from fastapi import status
 from sqlalchemy import create_engine, text
 from app.models.connection import DatabaseConnection, QueryAuditLog
-from app.core.ai.query_generator import generate_sql_from_question, heuristic_offline_compiler
+from app.core.ai.query_generator import heuristic_offline_compiler
 from app.core.ai.executor import execute_assistant_query, validate_sql_structure
 
 def test_heuristic_offline_compiler_rules():

@@ -1,9 +1,8 @@
 import os
 import io
-import pytest
 from fastapi import status
 from app.core.connections.encryptor import encrypt_password, decrypt_password
-from app.models.connection import DatabaseConnection, QueryAuditLog
+from app.models.connection import QueryAuditLog
 
 def test_credentials_encryption_decryption():
     """

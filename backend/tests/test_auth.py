@@ -1,7 +1,4 @@
-import pytest
 from fastapi import status
-from app.models.user import User
-from app.models.token import RefreshToken, RevokedToken
 
 def test_register_user_success(client):
     """
