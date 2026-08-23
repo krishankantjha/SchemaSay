@@ -13,7 +13,7 @@ const Copilot = (() => {
     { id: 'generate',   label: 'Generating SQL...' },
     { id: 'validate',   label: 'Validating SQL...' },
     { id: 'execute',    label: 'Executing query...' },
-    { id: 'insights',   label: 'Generating insights...' },
+    { id: 'results',    label: 'Preparing results...' },
   ];
 
   // ---- Init CodeMirror SQL Editor ----
@@ -96,7 +96,7 @@ const Copilot = (() => {
     if (insightsBar)  { insightsBar.style.display = 'none'; }
 
     // Animate through stages
-    const stageDurations = [400, 600, 500, 400, 300, 0];
+    const stageDurations = [400, 600, 500, 400, 300];
 
     try {
       for (let i = 0; i < STAGES.length - 1; i++) {
@@ -106,6 +106,10 @@ const Copilot = (() => {
 
       // Call backend / demo API
       const data = await api.generateQuery(connectionId, question);
+
+      if (data.success === false) {
+        throw new Error(data.error || 'The assistant could not complete this query.');
+      }
 
       // Mark last stage running, then done
       _renderStages(stageList, STAGES.length - 1);
@@ -149,6 +153,7 @@ const Copilot = (() => {
         rowCount: data.results?.length || 0,
         executionTime: (data.execution_duration_ms || 0) / 1000,
         chartConfig: data.chart_config,
+        truncated: data.truncated === true,
       };
 
       AppState.set({ queryResult: results, currentSql: data.sql || '' });
@@ -311,21 +316,24 @@ const Copilot = (() => {
       const results = {
         columns: data.columns || (data.rows?.[0] ? Object.keys(data.rows[0]) : []),
         rows: data.rows || [],
-        rowCount: data.row_count || data.rows?.length || 0,
+        rowCount: data.row_count ?? data.rows?.length ?? 0,
         executionTime: (data.execution_time_ms || 0) / 1000,
         chartConfig: data.chart_config,
+        truncated: data.truncated === true,
       };
 
-      AppState.set({ queryResult: results });
+      AppState.set({ queryResult: results, currentQuery: 'Manual SQL Editor Query', currentSql: sql });
 
       if (resultsWrap) {
         resultsWrap.style.display = 'block';
         QueryResults.render(results, resultsWrap);
       }
 
-      Toast.success(`Query executed — ${results.rowCount} row(s) returned.`);
+      _addToHistory('Manual SQL Editor Query', sql, 'success', data.execution_time_ms);
+      Toast.success(`Query executed — ${results.rowCount} row(s) returned${results.truncated ? ' (limited)' : ''}.`);
 
     } catch (err) {
+      _addToHistory('Manual SQL Editor Query', sql, 'failed', null);
       Toast.error(`Query failed: ${err.message}`);
       if (resultsWrap) {
         resultsWrap.innerHTML = `

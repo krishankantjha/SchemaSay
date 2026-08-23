@@ -136,6 +136,17 @@ const InsightsPage = (() => {
 const Workbench = (() => {
   let _editor = null;
 
+  function _buildStarterSQL() {
+    const schema = AppState.get('schema') || {};
+    const tableName = Object.keys(schema)[0];
+    if (!tableName) return '-- Select a connection and synchronize its schema before writing a query.';
+
+    const safeName = /^[A-Za-z_][A-Za-z0-9_$]*$/.test(tableName)
+      ? tableName
+      : `"${tableName.replace(/"/g, '""')}"`;
+    return `SELECT * FROM ${safeName} LIMIT 10;`;
+  }
+
   async function render(container) {
     container.innerHTML = `
       <div class="page-view workbench-layout">
@@ -161,7 +172,7 @@ const Workbench = (() => {
           </div>
 
           <div class="workbench-CodeMirror">
-            <textarea id="workbench-sql-editor">SELECT * FROM orders LIMIT 10;</textarea>
+            <textarea id="workbench-sql-editor">${DOM.escape(_buildStarterSQL())}</textarea>
           </div>
 
           <div class="workbench-footer">
@@ -236,9 +247,10 @@ const Workbench = (() => {
       const results = {
         columns: data.columns || (data.rows?.[0] ? Object.keys(data.rows[0]) : []),
         rows: data.rows || [],
-        rowCount: data.row_count || data.rows?.length || 0,
+        rowCount: data.row_count ?? data.rows?.length ?? 0,
         executionTime: (data.execution_time_ms || 0) / 1000,
         chartConfig: data.chart_config,
+        truncated: data.truncated === true,
       };
 
       AppState.set({ queryResult: results, currentSql: sql, currentQuery: 'Manual SQL Editor Query' });
@@ -251,9 +263,9 @@ const Workbench = (() => {
 
       if (statusEl) {
         statusEl.className = 'workbench-status-text success';
-        statusEl.innerHTML = `✓ Query executed — ${results.rowCount} row(s) in ${DOM.formatDuration(data.execution_time_ms)}`;
+        statusEl.innerHTML = `✓ Query executed — ${results.rowCount} row(s) in ${DOM.formatDuration(data.execution_time_ms)}${results.truncated ? ' · result set limited' : ''}`;
       }
-      Toast.success(`Query executed — ${results.rowCount} row(s) returned.`);
+      Toast.success(`Query executed — ${results.rowCount} row(s) returned${results.truncated ? ' (limited)' : ''}.`);
 
     } catch (err) {
       if (statusEl) {
