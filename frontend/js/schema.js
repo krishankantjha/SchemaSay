@@ -8,6 +8,7 @@ const SchemaModule = (() => {
   let _tablesList  = null;
   let _colInspector = null;
   let _syncBtn = null;
+  let _loadSequence = 0;
 
   // ---- Init ----
 
@@ -15,57 +16,78 @@ const SchemaModule = (() => {
     _searchInput  = document.getElementById('schema-search-input');
     _tablesList   = document.getElementById('schema-tables-list');
     _colInspector = document.getElementById('column-inspector');
-    _syncBtn      = document.getElementById('sync-schema-btn');
+    _syncBtn      = document.getElementById('schema-refresh-btn') || document.getElementById('sync-schema-btn');
 
     _searchInput?.addEventListener('input', _filterTables);
     _syncBtn?.addEventListener('click', _syncSchema);
+    _updateConnectionLabel(AppState.get('activeConnection'));
 
-    // Load schema for active connection
+    // Load schema for active connection or show a useful empty state.
     const connId = AppState.get('activeConnection')?.id;
     if (connId) loadSchema(connId);
+    else _renderTables([]);
 
     // React to connection changes
     AppState.subscribe('activeConnection', (conn) => {
+      _updateConnectionLabel(conn);
       if (conn?.id) loadSchema(conn.id);
+      else loadSchema(null);
     });
+  }
+
+  function _updateConnectionLabel(connection) {
+    const label = document.getElementById('schema-name');
+    if (label) label.textContent = connection?.name || 'No connection selected';
   }
 
   // ---- Load Schema ----
 
   async function loadSchema(connectionId) {
-    if (!connectionId) return;
+    if (!connectionId) {
+      if (_searchInput) _searchInput.value = '';
+      AppState.set({ schema: {}, selectedTable: null, isLoadingSchema: false });
+      _renderTables([]);
+      if (_colInspector) _colInspector.classList.add('hidden');
+      return;
+    }
 
+    const requestSequence = ++_loadSequence;
+    if (_searchInput) _searchInput.value = '';
     AppState.set({ isLoadingSchema: true });
     Loading.showSkeleton(_tablesList, 8);
     if (_colInspector) _colInspector.classList.add('hidden');
 
     try {
       const data = await api.getSchema(connectionId);
-      const tables = data.tables || [];
+      if (requestSequence !== _loadSequence) return;
+      const tables = Array.isArray(data?.tables) ? data.tables : [];
 
       AppState.set({ schema: _indexSchema(tables), selectedTable: null });
       _renderTables(tables);
 
-      // Auto-select first table
+      // Auto-select the first table only when real schema data is available.
       if (tables.length > 0) _selectTable(tables[0].name);
 
     } catch (err) {
+      if (requestSequence !== _loadSequence) return;
       if (_tablesList) {
         _tablesList.innerHTML = `
-          <div class="state-empty">
-            <svg class="state-empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-            <p class="state-empty-desc">Failed to load schema.<br>${DOM.escape(err.message)}</p>
+          <div class="state-error" role="alert">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            <span>Failed to load schema. ${DOM.escape(err.message)}</span>
           </div>
         `;
       }
     } finally {
-      AppState.set({ isLoadingSchema: false });
+      if (requestSequence === _loadSequence) AppState.set({ isLoadingSchema: false });
     }
   }
 
   function _indexSchema(tables) {
-    const idx = {};
-    tables.forEach(t => { idx[t.name] = t.columns || []; });
+    const idx = Object.create(null);
+    tables.forEach(t => {
+      if (t?.name) idx[t.name] = Array.isArray(t.columns) ? t.columns : [];
+    });
     return idx;
   }
 
@@ -82,9 +104,12 @@ const SchemaModule = (() => {
       : tables;
 
     if (filtered.length === 0) {
+      const hasFilter = Boolean(filterText);
       _tablesList.innerHTML = `
         <div class="state-empty" style="padding:var(--sp-6) var(--sp-4)">
-          <p class="state-empty-desc">No tables match "${DOM.escape(filterText)}"</p>
+          <svg class="state-empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+          <p class="state-empty-title">${hasFilter ? 'No matching tables' : 'No schema loaded'}</p>
+          <p class="state-empty-desc">${hasFilter ? `Nothing matches "${DOM.escape(filterText)}".` : 'Select a connection and synchronize its schema to see tables here.'}</p>
         </div>
       `;
       return;
@@ -205,9 +230,11 @@ const SchemaModule = (() => {
     if (refreshIcon) refreshIcon.classList.add('spinning');
 
     try {
-      await api.syncSchema(conn.id);
+      const result = await api.syncSchema(conn.id);
       await loadSchema(conn.id);
-      Toast.success('Schema synchronized successfully.');
+      const columnsSynced = Number(result?.columns_synced);
+      const suffix = Number.isFinite(columnsSynced) ? ` ${columnsSynced} columns indexed.` : '';
+      Toast.success(`Schema synchronized successfully.${suffix}`);
     } catch (err) {
       Toast.error(`Schema sync failed: ${err.message}`);
     } finally {
