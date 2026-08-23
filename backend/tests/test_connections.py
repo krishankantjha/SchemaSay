@@ -2,7 +2,7 @@ import os
 import io
 from fastapi import status
 from app.core.connections.encryptor import encrypt_password, decrypt_password
-from app.models.connection import QueryAuditLog
+from app.models.connection import DatabaseConnection, QueryAuditLog
 
 def test_credentials_encryption_decryption():
     """
@@ -88,6 +88,84 @@ def test_test_connection_endpoint(client, monkeypatch):
     res_fail = client.post("/api/v1/connections/test", json=payload, headers=headers)
     assert res_fail.status_code == status.HTTP_400_BAD_REQUEST
     assert "Connection test failed" in res_fail.json()["detail"]
+
+def test_saved_connection_test_uses_server_side_credentials(client, db, monkeypatch):
+    """Saved connection tests decrypt credentials server-side and never require browser secrets."""
+    token = get_auth_token(client)
+    headers = {"Authorization": f"Bearer {token}"}
+    user_id = client.get("/api/v1/auth/me", headers=headers).json()["id"]
+    connection = DatabaseConnection(
+        user_id=user_id,
+        name="Saved PostgreSQL",
+        db_type="postgresql",
+        host="localhost",
+        port=5432,
+        username="reader",
+        database_name="analytics",
+        encrypted_password=encrypt_password("saved-secret"),
+    )
+    db.add(connection)
+    db.commit()
+    db.refresh(connection)
+
+    captured = {}
+
+    def mock_saved_test(**kwargs):
+        captured.update(kwargs)
+        return True, ""
+
+    monkeypatch.setattr("app.api.routes.connections.test_connection", mock_saved_test)
+    response = client.post(f"/api/v1/connections/{connection.id}/test", headers=headers)
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json() == {
+        "success": True,
+        "healthy": True,
+        "message": "Database connection test succeeded",
+    }
+    assert captured["password"] == "saved-secret"
+    assert "password" not in response.json()
+
+
+def test_connection_update_preserves_existing_password(client, db):
+    """Updating metadata without a password keeps the encrypted credential unchanged."""
+    token = get_auth_token(client)
+    headers = {"Authorization": f"Bearer {token}"}
+    user_id = client.get("/api/v1/auth/me", headers=headers).json()["id"]
+    connection = DatabaseConnection(
+        user_id=user_id,
+        name="Editable PostgreSQL",
+        db_type="postgresql",
+        host="localhost",
+        port=5432,
+        username="reader",
+        database_name="analytics",
+        encrypted_password=encrypt_password("keep-this-secret"),
+    )
+    db.add(connection)
+    db.commit()
+    db.refresh(connection)
+
+    response = client.put(
+        f"/api/v1/connections/{connection.id}",
+        json={
+            "name": "Renamed PostgreSQL",
+            "db_type": "postgresql",
+            "host": "localhost",
+            "port": 5432,
+            "username": "reader",
+            "database_name": "analytics",
+            "password": None,
+        },
+        headers=headers,
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()["name"] == "Renamed PostgreSQL"
+    db.refresh(connection)
+    assert decrypt_password(connection.encrypted_password) == "keep-this-secret"
+    assert "encrypted_password" not in response.json()
+
 
 def test_connection_crud_flow(client):
     """
