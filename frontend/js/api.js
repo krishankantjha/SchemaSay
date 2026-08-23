@@ -160,6 +160,107 @@ async function _fetch(endpoint, options = {}, allowRefresh = true) {
   }
 }
 
+async function _fetchMultipart(endpoint, formData, allowRefresh = true) {
+  const token = AppState.get('authToken');
+  const headers = token ? { Authorization: `Bearer ${token}` } : {};
+
+  try {
+    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+      method: 'POST',
+      headers,
+      body: formData,
+    });
+
+    if (response.status === 401 && allowRefresh && !endpoint.startsWith('/auth/')) {
+      if (await _refreshAccessToken()) return _fetchMultipart(endpoint, formData, false);
+    }
+    if (response.status === 401) {
+      AppState.clearToken();
+      window.location.hash = '#login';
+      throw new Error('Session expired. Please log in again.');
+    }
+
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.detail || `Request failed (${response.status})`);
+    return data;
+  } catch (err) {
+    if (err.name === 'TypeError' && err.message.includes('fetch')) {
+      throw new Error('Cannot connect to server. Please check that the backend is running.');
+    }
+    throw err;
+  }
+}
+
+function _normalizeSchemaResponse(payload) {
+  const entries = Array.isArray(payload) ? payload : (Array.isArray(payload?.tables) ? payload.tables : []);
+  const grouped = new Map();
+
+  entries.forEach(entry => {
+    const tableName = entry?.table_name || entry?.name;
+    if (!tableName) return;
+
+    if (!grouped.has(tableName)) grouped.set(tableName, []);
+    const columns = Array.isArray(entry.columns)
+      ? entry.columns
+      : [entry];
+
+    columns.forEach(column => {
+      const columnName = column?.column_name || column?.name;
+      if (!columnName) return;
+      const normalized = {
+        name: columnName,
+        type: column?.data_type || column?.type || 'unknown',
+      };
+      if (column?.pk !== undefined) normalized.pk = Boolean(column.pk);
+      if (column?.fk !== undefined) normalized.fk = Boolean(column.fk);
+
+      const existing = grouped.get(tableName);
+      if (!existing.some(item => item.name === normalized.name)) existing.push(normalized);
+    });
+  });
+
+  return {
+    tables: Array.from(grouped, ([name, columns]) => ({ name, columns })),
+  };
+}
+
+function _normalizeAssistantResponse(payload) {
+  const results = Array.isArray(payload?.results) ? payload.results : [];
+  return {
+    ...payload,
+    sql: payload?.sql || '',
+    success: payload?.success !== false,
+    error: payload?.error ?? null,
+    results,
+    execution_duration_ms: Number(payload?.execution_duration_ms ?? 0) || 0,
+    truncated: payload?.truncated === true,
+    chart_config: payload?.chart_config || null,
+  };
+}
+
+function _normalizeDirectQueryResponse(payload) {
+  const rows = Array.isArray(payload?.rows) ? payload.rows : [];
+  const columns = Array.isArray(payload?.columns) && payload.columns.length
+    ? payload.columns
+    : (rows[0] ? Object.keys(rows[0]) : []);
+  return {
+    ...payload,
+    columns,
+    rows,
+    row_count: Number(payload?.row_count ?? rows.length) || 0,
+    execution_time_ms: Number(payload?.execution_time_ms ?? 0) || 0,
+    truncated: payload?.truncated === true,
+    chart_config: payload?.chart_config || null,
+  };
+}
+
+function _normalizeInsightsResponse(payload) {
+  const insights = Array.isArray(payload?.insights)
+    ? payload.insights
+    : (payload?.insight ? [payload.insight] : []);
+  return { ...payload, insights };
+}
+
 function _delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -280,17 +381,7 @@ const api = {
     const formData = new FormData();
     formData.append('name', name);
     formData.append('file', file);
-    const token = AppState.get('authToken');
-    const response = await fetch(`${API_BASE_URL}/connections/upload`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}` },
-      body: formData,
-    });
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({}));
-      throw new Error(err.detail || `Upload failed (${response.status})`);
-    }
-    return response.json();
+    return _fetchMultipart('/connections/upload', formData);
   },
 
   // ---- Schema ----
@@ -298,9 +389,10 @@ const api = {
   async getSchema(connectionId) {
     if (DEMO_MODE) {
       await _delay(500);
-      return DEMO.schema;
+      return _normalizeSchemaResponse(DEMO.schema);
     }
-    return _fetch(`/schema/${connectionId}`);
+    const data = await _fetch(`/schema/${connectionId}`);
+    return _normalizeSchemaResponse(data);
   },
 
   async syncSchema(connectionId) {
@@ -316,19 +408,20 @@ const api = {
   async generateQuery(connectionId, question) {
     if (DEMO_MODE) {
       await _delay(2000);
-      return {
+      return _normalizeAssistantResponse({
         sql: DEMO.generatedSQL,
         success: true,
         error: null,
         results: DEMO.queryResult.rows,
         execution_duration_ms: 820,
         chart_config: DEMO.queryResult.chartConfig,
-      };
+      });
     }
-    return _fetch('/assistant/query', {
+    const data = await _fetch('/assistant/query', {
       method: 'POST',
       body: JSON.stringify({ connection_id: connectionId, question }),
     });
+    return _normalizeAssistantResponse(data);
   },
 
   // ---- SQL Execution ----
@@ -338,7 +431,7 @@ const api = {
       await _delay(700);
       // Simple mock: if the SQL looks like a SELECT, return data
       if (sqlQuery.trim().toUpperCase().startsWith('SELECT')) {
-        return {
+        return _normalizeDirectQueryResponse({
           columns: DEMO.queryResult.columns,
           rows: DEMO.queryResult.rows,
           row_count: DEMO.queryResult.rowCount,
@@ -346,14 +439,15 @@ const api = {
           truncated: false,
           query_id: `demo-${Date.now()}`,
           chart_config: DEMO.queryResult.chartConfig,
-        };
+        });
       }
       throw new Error('SQL Validation Error: Only SELECT statements are permitted. Destructive statements are blocked by the security sandbox.');
     }
-    return _fetch('/query/execute', {
+    const data = await _fetch('/query/execute', {
       method: 'POST',
       body: JSON.stringify({ connection_id: connectionId, sql_query: sqlQuery }),
     });
+    return _normalizeDirectQueryResponse(data);
   },
 
   async formatQuery(sqlQuery) {
@@ -386,12 +480,13 @@ const api = {
   async generateInsights(rows, columns, question, sqlQuery = '') {
     if (DEMO_MODE) {
       await _delay(1500);
-      return { insights: DEMO.insights };
+      return _normalizeInsightsResponse({ insights: DEMO.insights });
     }
-    return _fetch('/insights/generate', {
+    const data = await _fetch('/insights/generate', {
       method: 'POST',
       body: JSON.stringify({ rows, columns, question, sql_query: sqlQuery || 'SELECT results' }),
     });
+    return _normalizeInsightsResponse(data);
   },
 
   // ---- Query History ----
