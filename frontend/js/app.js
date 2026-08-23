@@ -407,6 +407,10 @@ async function bootstrapApp() {
   // Init router
   initRouter();
 
+  // Initialize authentication bindings before checking the current session.
+  // This is required because checkSession() may call hide() and _showTab().
+  Auth.init();
+
   // Check session / authenticate
   const isLoggedIn = await Auth.checkSession();
 
