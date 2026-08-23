@@ -229,6 +229,7 @@
 }
 
 .connection-indicator.disconnected { background: var(--error); box-shadow: none; }
+.connection-indicator.unknown { background: var(--text-muted); box-shadow: none; }
 
 .connection-meta { flex: 1; min-width: 0; }
 
