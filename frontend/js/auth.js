@@ -8,8 +8,12 @@ const Auth = (() => {
   let authOverlay, loginForm, registerForm, authError;
   let loginTab, registerTab;
   let loginFormEl, registerFormEl;
+  let initialized = false;
 
   function _init() {
+    if (initialized) return;
+    initialized = true;
+
     authOverlay  = document.getElementById('auth-overlay');
     loginTab     = document.getElementById('auth-tab-login');
     registerTab  = document.getElementById('auth-tab-register');
@@ -187,6 +191,9 @@ const Auth = (() => {
 
     const topbarRole = document.getElementById('topbar-user-role');
     if (topbarRole) topbarRole.textContent = user.role || 'User';
+
+    const dropdownName = document.getElementById('user-dropdown-name');
+    if (dropdownName) dropdownName.textContent = user.full_name || 'User';
   }
 
   // ---- Public API ----
