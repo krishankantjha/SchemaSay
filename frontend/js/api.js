@@ -351,6 +351,40 @@ const api = {
     return _fetch('/connections/test', { method: 'POST', body: JSON.stringify(payload) });
   },
 
+  async testSavedConnection(connectionId) {
+    if (DEMO_MODE) {
+      await _delay(900);
+      const connection = DEMO.connections.find(item => item.id === connectionId);
+      if (!connection) throw new Error('Connection not found.');
+      return { success: true, healthy: true, message: 'Database connection test succeeded.' };
+    }
+    return _fetch(`/connections/${connectionId}/test`, { method: 'POST' });
+  },
+
+  async updateConnection(connectionId, payload) {
+    if (DEMO_MODE) {
+      await _delay(900);
+      const index = DEMO.connections.findIndex(item => item.id === connectionId);
+      if (index < 0) throw new Error('Connection not found.');
+      const updated = {
+        ...DEMO.connections[index],
+        name: payload.name,
+        db_type: payload.db_type,
+        host: payload.host || null,
+        port: payload.port || null,
+        username: payload.username || null,
+        database_name: payload.database_name,
+        health_status: 'unknown',
+      };
+      DEMO.connections[index] = updated;
+      return updated;
+    }
+    return _fetch(`/connections/${connectionId}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  },
+
   async deleteConnection(connectionId) {
     if (DEMO_MODE) {
       await _delay(500);

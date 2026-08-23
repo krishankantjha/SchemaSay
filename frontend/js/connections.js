@@ -4,6 +4,8 @@
  */
 
 const Connections = (() => {
+  let editingConnectionId = null;
+
   // ---- Render Connections View ----
 
   async function render(container) {
@@ -34,7 +36,9 @@ const Connections = (() => {
     `;
 
     // Bind buttons
-    document.getElementById('add-connection-btn')?.addEventListener('click', () => Modal.open('add-connection-modal'));
+    document.getElementById('add-connection-btn')?.addEventListener('click', () => {
+      _openAddConnection();
+    });
     document.getElementById('upload-file-btn')?.addEventListener('click', () => Modal.open('upload-file-modal'));
 
     await _loadConnections();
@@ -73,60 +77,69 @@ const Connections = (() => {
       return;
     }
 
-    const dbTypeLabels = { postgresql: 'PostgreSQL', mysql: 'MySQL', sqlite: 'SQLite', mssql: 'SQL Server' };
+    const dbTypeLabels = { postgresql: 'PostgreSQL', mysql: 'MySQL', sqlite: 'SQLite', mssql: 'SQL Server', file_upload: 'File upload' };
 
-    container.innerHTML = `<div class="connection-cards">${connections.map(conn => `
-      <div class="connection-card" data-id="${conn.id}">
-        <div class="connection-card-header">
-          <div class="connection-db-icon">${_getDbIcon(conn.db_type)}</div>
-          <div class="connection-card-info">
-            <div class="connection-card-name">${DOM.escape(conn.name)}</div>
-            <div class="connection-card-type">${DOM.escape(dbTypeLabels[conn.db_type] || conn.db_type || 'Unknown')}</div>
+    container.innerHTML = `<div class="connection-cards">${connections.map(conn => {
+      const health = _healthState(conn);
+      const status = _healthPresentation(health);
+      const canEdit = conn.db_type !== 'file_upload';
+      return `
+        <div class="connection-card" data-id="${conn.id}">
+          <div class="connection-card-header">
+            <div class="connection-db-icon">${_getDbIcon(conn.db_type)}</div>
+            <div class="connection-card-info">
+              <div class="connection-card-name">${DOM.escape(conn.name)}</div>
+              <div class="connection-card-type">${DOM.escape(dbTypeLabels[conn.db_type] || conn.db_type || 'Unknown')}</div>
+            </div>
+            <span class="connection-status-badge ${status.className}">
+              <span style="width:6px;height:6px;border-radius:50%;background:currentColor;display:inline-block;"></span>
+              ${status.label}
+            </span>
           </div>
-          <span class="connection-status-badge ${conn.connected ? 'connected' : 'disconnected'}">
-            <span style="width:6px;height:6px;border-radius:50%;background:currentColor;display:inline-block;"></span>
-            ${conn.connected ? 'Connected' : 'Disconnected'}
-          </span>
-        </div>
 
-        <div class="connection-card-details">
-          <div class="connection-detail-item">
-            <span class="connection-detail-label">Host</span>
-            <span class="connection-detail-value">${DOM.escape(conn.host || 'local')}</span>
+          <div class="connection-card-details">
+            <div class="connection-detail-item">
+              <span class="connection-detail-label">Host</span>
+              <span class="connection-detail-value">${DOM.escape(conn.host || 'local')}</span>
+            </div>
+            <div class="connection-detail-item">
+              <span class="connection-detail-label">Database</span>
+              <span class="connection-detail-value">${DOM.escape(conn.database_name)}</span>
+            </div>
+            <div class="connection-detail-item">
+              <span class="connection-detail-label">Port</span>
+              <span class="connection-detail-value">${conn.port || '—'}</span>
+            </div>
+            <div class="connection-detail-item">
+              <span class="connection-detail-label">Username</span>
+              <span class="connection-detail-value">${DOM.escape(conn.username || '—')}</span>
+            </div>
           </div>
-          <div class="connection-detail-item">
-            <span class="connection-detail-label">Database</span>
-            <span class="connection-detail-value">${DOM.escape(conn.database_name)}</span>
-          </div>
-          <div class="connection-detail-item">
-            <span class="connection-detail-label">Port</span>
-            <span class="connection-detail-value">${conn.port || '—'}</span>
-          </div>
-          <div class="connection-detail-item">
-            <span class="connection-detail-label">Username</span>
-            <span class="connection-detail-value">${DOM.escape(conn.username || '—')}</span>
-          </div>
-        </div>
 
-        <div class="connection-card-actions">
-          <button class="btn btn-primary btn-sm conn-activate-btn" data-id="${conn.id}">
-            ${conn.connected ? 'Use Connection' : 'Connect'}
-          </button>
-          <button class="btn btn-secondary btn-sm conn-test-btn" data-id="${conn.id}">Test</button>
-          <button class="btn btn-ghost btn-sm conn-delete-btn" data-id="${conn.id}" style="color:var(--error);margin-left:auto;">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
-            Delete
-          </button>
+          <div class="connection-card-actions">
+            <button class="btn btn-primary btn-sm conn-activate-btn" data-id="${conn.id}">
+              Use Connection
+            </button>
+            <button class="btn btn-secondary btn-sm conn-test-btn" data-id="${conn.id}">Test</button>
+            ${canEdit ? `<button class="btn btn-ghost btn-sm conn-edit-btn" data-id="${conn.id}">Edit</button>` : ''}
+            <button class="btn btn-ghost btn-sm conn-delete-btn" data-id="${conn.id}" style="color:var(--error);margin-left:auto;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+              Delete
+            </button>
+          </div>
         </div>
-      </div>
-    `).join('')}</div>`;
+      `;
+    }).join('')}</div>`;
 
     // Bind actions
     container.querySelectorAll('.conn-activate-btn').forEach(btn => {
       btn.addEventListener('click', () => _setActive(parseInt(btn.dataset.id)));
     });
     container.querySelectorAll('.conn-test-btn').forEach(btn => {
-      btn.addEventListener('click', (e) => _testConnection(parseInt(btn.dataset.id), btn));
+      btn.addEventListener('click', () => _testConnection(parseInt(btn.dataset.id), btn));
+    });
+    container.querySelectorAll('.conn-edit-btn').forEach(btn => {
+      btn.addEventListener('click', () => _openEditConnection(parseInt(btn.dataset.id)));
     });
     container.querySelectorAll('.conn-delete-btn').forEach(btn => {
       btn.addEventListener('click', () => _deleteConnection(parseInt(btn.dataset.id), btn));
@@ -143,7 +156,7 @@ const Connections = (() => {
     // Update topbar
     _updateConnectionDropdown(connections, conn);
 
-    Toast.success(`Connected to ${conn.name}`);
+    Toast.success(`Using ${conn.name}`);
     SchemaModule.loadSchema(conn.id);
     Router.navigate('dashboard');
   }
@@ -156,20 +169,49 @@ const Connections = (() => {
     Loading.setButton(btn, 'Testing...');
 
     try {
-      const result = await api.testConnection({
-        db_type: conn.db_type,
-        host: conn.host,
-        port: conn.port,
-        username: conn.username,
-        password: '***',
-        database_name: conn.database_name,
-      });
-      Toast.success(result.message || 'Connection test successful!');
+      const result = await api.testSavedConnection(connectionId);
+      const healthStatus = result.healthy ? 'healthy' : 'failed';
+      _updateConnection(connectionId, { health_status: healthStatus });
+      if (result.healthy) Toast.success(result.message || 'Database connection test succeeded.');
+      else Toast.error(result.message || 'Database connection test failed.');
     } catch (err) {
+      _updateConnection(connectionId, { health_status: 'failed' });
       Toast.error('Connection test failed: ' + err.message);
     } finally {
       Loading.resetButton(btn);
     }
+  }
+
+  function _healthState(conn) {
+    if (conn?.health_status) return conn.health_status;
+    if (conn?.connected === true) return 'healthy';
+    return 'unknown';
+  }
+
+  function _matchesSavedConnection(payload, connection) {
+    return payload.db_type === connection.db_type
+      && payload.host === (connection.host || null)
+      && payload.port === (connection.port || null)
+      && payload.username === (connection.username || null)
+      && payload.database_name === connection.database_name;
+  }
+
+  function _healthPresentation(health) {
+    if (health === 'healthy') return { className: 'connected', label: 'Connected' };
+    if (health === 'failed') return { className: 'disconnected', label: 'Test failed' };
+    return { className: 'unknown', label: 'Not tested' };
+  }
+
+  function _updateConnection(connectionId, updates) {
+    const connections = AppState.get('connections').map(conn =>
+      conn.id === connectionId ? { ...conn, ...updates } : conn
+    );
+    AppState.set({ connections });
+    const active = AppState.get('activeConnection');
+    if (active?.id === connectionId) AppState.set({ activeConnection: { ...active, ...updates } });
+    const list = document.getElementById('connection-cards-list');
+    if (list) _renderCards(connections, list);
+    _updateConnectionDropdown(connections);
   }
 
   async function _deleteConnection(connectionId, btn) {
@@ -178,6 +220,9 @@ const Connections = (() => {
     Loading.setButton(btn, 'Deleting...');
     try {
       await api.deleteConnection(connectionId);
+      if (AppState.get('activeConnection')?.id === connectionId) {
+        AppState.set({ activeConnection: null, schema: {}, selectedTable: null });
+      }
       Toast.success('Connection deleted.');
       await _loadConnections();
     } catch (err) {
@@ -197,19 +242,24 @@ const Connections = (() => {
 
     const dotEl = document.getElementById('active-conn-dot');
     if (dotEl) {
-      dotEl.className = `connection-indicator ${active?.connected ? '' : 'disconnected'}`;
+      const health = _healthState(active);
+      dotEl.className = `connection-indicator ${health === 'healthy' ? '' : health === 'failed' ? 'disconnected' : 'unknown'}`;
     }
 
     // Build dropdown items
     const dropdownList = document.getElementById('conn-dropdown-list');
     if (!dropdownList) return;
 
-    dropdownList.innerHTML = connections.map(c => `
+    dropdownList.innerHTML = connections.map(c => {
+      const health = _healthState(c);
+      const color = health === 'healthy' ? 'var(--success)' : health === 'failed' ? 'var(--error)' : 'var(--text-muted)';
+      return `
       <button class="dropdown-item ${c.id === active?.id ? 'active' : ''}" data-id="${c.id}">
-        <span style="width:7px;height:7px;border-radius:50%;background:${c.connected ? 'var(--success)' : 'var(--text-muted)'};flex-shrink:0;"></span>
+        <span style="width:7px;height:7px;border-radius:50%;background:${color};flex-shrink:0;"></span>
         ${DOM.escape(c.name)}
       </button>
-    `).join('');
+    `;
+    }).join('');
 
     dropdownList.querySelectorAll('[data-id]').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -241,8 +291,18 @@ const Connections = (() => {
       Loading.setButton(testBtn, 'Testing...');
       const statusEl = document.getElementById('conn-test-status');
 
-      try {
-        const result = await api.testConnection(payload);
+    try {
+      const savedConnection = editingConnectionId
+        ? AppState.get('connections').find(item => item.id === editingConnectionId)
+        : null;
+      const unchangedSavedConnection = savedConnection && _matchesSavedConnection(payload, savedConnection);
+      if (editingConnectionId && !payload.password && !unchangedSavedConnection) {
+        Toast.warning('Enter the password to test the updated connection settings.');
+        return;
+      }
+      const result = editingConnectionId && !payload.password
+        ? await api.testSavedConnection(editingConnectionId)
+        : await api.testConnection(payload);
         if (statusEl) {
           statusEl.className = 'state-success';
           statusEl.style.display = 'flex';
@@ -276,14 +336,24 @@ const Connections = (() => {
       Loading.setButton(submitBtn, 'Saving...');
 
       try {
-        const newConn = await api.createConnection(payload);
-        const connections = [...AppState.get('connections'), newConn];
+        const savedConn = editingConnectionId
+          ? await api.updateConnection(editingConnectionId, payload)
+          : await api.createConnection(payload);
+        const connections = editingConnectionId
+          ? AppState.get('connections').map(conn => conn.id === editingConnectionId
+            ? { ...conn, ...savedConn, health_status: 'unknown' }
+            : conn)
+          : [...AppState.get('connections'), { ...savedConn, health_status: 'unknown' }];
         AppState.set({ connections });
+        if (AppState.get('activeConnection')?.id === savedConn.id) {
+          AppState.set({ activeConnection: savedConn });
+        }
 
+        const wasEditing = Boolean(editingConnectionId);
         Modal.close('add-connection-modal');
-        form.reset();
+        _resetConnectionForm(form);
         document.getElementById('conn-test-status')?.style.setProperty('display', 'none');
-        Toast.success(`Connection "${newConn.name}" added.`);
+        Toast.success(wasEditing ? `Connection "${savedConn.name}" updated.` : `Connection "${savedConn.name}" added.`);
 
         // Refresh if on connections page
         if (AppState.get('currentView') === 'connections') {
@@ -296,6 +366,48 @@ const Connections = (() => {
         Loading.resetButton(submitBtn);
       }
     });
+  }
+
+  function _openAddConnection() {
+    editingConnectionId = null;
+    const form = document.getElementById('add-connection-form');
+    _resetConnectionForm(form);
+    Modal.open('add-connection-modal');
+  }
+
+  function _openEditConnection(connectionId) {
+    const conn = AppState.get('connections').find(item => item.id === connectionId);
+    if (!conn) return;
+    editingConnectionId = connectionId;
+    document.getElementById('add-conn-modal-title').textContent = 'Edit Database Connection';
+    document.getElementById('save-conn-btn').textContent = 'Save Changes';
+    document.getElementById('conn-name').value = conn.name || '';
+    document.getElementById('conn-db-type').value = conn.db_type || 'postgresql';
+    document.getElementById('conn-host').value = conn.host || '';
+    document.getElementById('conn-port').value = conn.port || '';
+    document.getElementById('conn-database').value = conn.database_name || '';
+    document.getElementById('conn-username').value = conn.username || '';
+    document.getElementById('conn-password').value = '';
+    document.getElementById('conn-password').placeholder = 'Leave blank to keep the saved password';
+    document.getElementById('conn-server-fields').style.display = conn.db_type === 'sqlite' ? 'none' : 'grid';
+    const statusEl = document.getElementById('conn-test-status');
+    if (statusEl) statusEl.style.display = 'none';
+    Modal.open('add-connection-modal');
+  }
+
+  function _resetConnectionForm(form) {
+    editingConnectionId = null;
+    form?.reset();
+    const title = document.getElementById('add-conn-modal-title');
+    if (title) title.textContent = 'Add Database Connection';
+    const saveBtn = document.getElementById('save-conn-btn');
+    if (saveBtn) saveBtn.textContent = 'Save Connection';
+    const password = document.getElementById('conn-password');
+    if (password) password.placeholder = '••••••••';
+    const serverFields = document.getElementById('conn-server-fields');
+    if (serverFields) serverFields.style.display = 'grid';
+    const statusEl = document.getElementById('conn-test-status');
+    if (statusEl) statusEl.style.display = 'none';
   }
 
   function _getFormPayload() {
@@ -377,10 +489,11 @@ const Connections = (() => {
       const connections = await api.getConnections();
       AppState.set({ connections });
 
-      // Auto-select first connected connection
-      const firstConnected = connections.find(c => c.connected) || connections[0];
-      if (firstConnected && !AppState.get('activeConnection')) {
-        AppState.set({ activeConnection: firstConnected });
+      const activeId = AppState.get('activeConnection')?.id;
+      const currentActive = connections.find(conn => conn.id === activeId);
+      const firstConnection = currentActive || connections[0];
+      if (firstConnection) {
+        AppState.set({ activeConnection: firstConnection });
       }
 
       _updateConnectionDropdown(connections);
@@ -395,5 +508,7 @@ const Connections = (() => {
     initAddConnectionModal,
     initUploadModal,
     updateDropdown: _updateConnectionDropdown,
+    openAdd: _openAddConnection,
+    openEdit: _openEditConnection,
   };
 })();
