@@ -1,36 +1,42 @@
 import io
-import os
-import uuid
-import re
 import logging
+import re
+import uuid
+from pathlib import Path
 from typing import Tuple
+
 import pandas as pd
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine, URL
-from app.models.connection import DatabaseConnection
-from app.core.connections.encryptor import decrypt_password
+
+from app.config import settings
 from app.core.connections.pool import engine_registry
+from app.core.security.connection_policy import validate_database_target, validate_sqlite_path
+from app.models.connection import DatabaseConnection
 
 logger = logging.getLogger("schemasay.connector")
 
-# Storage directory for SQLite databases created from uploaded CSV/Excel files
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-DATA_DIR = os.path.join(BASE_DIR, "data")
+DATA_DIR = Path(settings.SQLITE_DATA_DIR).expanduser().resolve(strict=False)
+
 
 def sanitize_error_message(msg: str) -> str:
-    """
-    Regex-masks plaintext credentials and urls inside database driver exceptions.
-    Masks credentials from SQLAlchemy connection strings (e.g., postgresql://user:pass@host/db).
-    """
-    pattern = r'[a-zA-Z0-9\+\-_]+://[^/]+@'
-    return re.sub(pattern, '***://***@', msg)
+    """Mask credentials and connection URLs before an error is logged or returned."""
+    pattern = r"[a-zA-Z0-9+\-_]+://[^/]+@"
+    return re.sub(pattern, "***://***@", msg)
 
-def get_connection_url(db_type: str, host: str, port: int, username: str, password: str, database_name: str) -> URL:
-    """
-    Constructs the appropriate SQLAlchemy URL object based on database type.
-    """
-    db_type = db_type.lower()
-    
+
+def get_connection_url(
+    db_type: str,
+    host: str | None,
+    port: int | None,
+    username: str | None,
+    password: str | None,
+    database_name: str,
+) -> URL:
+    """Construct a SQLAlchemy URL after validating the target boundary."""
+    db_type = (db_type or "").strip().lower()
+    database_name = validate_database_target(db_type, host, database_name)
+
     if db_type == "postgresql":
         return URL.create(
             drivername="postgresql",
@@ -38,124 +44,125 @@ def get_connection_url(db_type: str, host: str, port: int, username: str, passwo
             password=password,
             host=host,
             port=port,
-            database=database_name
+            database=database_name,
         )
-    elif db_type == "mysql":
+    if db_type == "mysql":
         return URL.create(
             drivername="mysql+pymysql",
             username=username,
             password=password,
             host=host,
             port=port,
-            database=database_name
+            database=database_name,
         )
-    elif db_type == "mssql":
+    if db_type == "mssql":
         return URL.create(
             drivername="mssql+pymssql",
             username=username,
             password=password,
             host=host,
             port=port,
-            database=database_name
+            database=database_name,
         )
-    elif db_type in ["sqlite", "file_upload"]:
-        # SQLite uses database_name as the absolute local file path
-        return URL.create(
-            drivername="sqlite",
-            database=database_name
-        )
-    else:
-        raise ValueError(f"Unsupported database connection type: {db_type}")
+    if db_type in {"sqlite", "file_upload"}:
+        return URL.create(drivername="sqlite", database=database_name)
+    raise ValueError("Unsupported database connection type")
 
-def get_connection_string(db_type: str, host: str, port: int, username: str, password: str, database_name: str) -> str:
-    """
-    Returns a plain SQLAlchemy connection string for the given database type.
-    Delegates to get_connection_url() and converts the result to a string.
-    """
+
+def get_connection_string(
+    db_type: str,
+    host: str,
+    port: int,
+    username: str,
+    password: str,
+    database_name: str,
+) -> str:
     return str(get_connection_url(db_type, host, port, username, password, database_name))
 
+
 def get_connection(record: DatabaseConnection) -> Engine:
-    """
-    Retrieves the cached connection engine from the thread-safe global registry.
-    """
     return engine_registry.get_engine(record)
 
+
 def dispose_connection_engine(record: DatabaseConnection) -> None:
-    """
-    Safely disposes of and ejects the target connection pool from the cache registry.
-    """
     engine_registry.remove_engine(record.id)
 
-def test_connection(db_type: str, host: str, port: int, username: str, password: str, database_name: str) -> Tuple[bool, str]:
-    """
-    Attempts to establish a live connection to check credentials and network routing.
-    Returns (True, "") on success, or (False, sanitized_error_message) on failure.
-    """
+
+def test_connection(
+    db_type: str,
+    host: str,
+    port: int,
+    username: str,
+    password: str,
+    database_name: str,
+) -> Tuple[bool, str]:
+    """Attempt a bounded connection test and always dispose its temporary engine."""
+    engine = None
     try:
-        url = get_connection_url(
-            db_type=db_type,
-            host=host,
-            port=port,
-            username=username,
-            password=password,
-            database_name=database_name
-        )
-        
-        # Configure driver-specific connection timeouts (10 seconds)
+        url = get_connection_url(db_type, host, port, username, password, database_name)
         connect_args = {}
         db_type_lower = db_type.lower()
-        if db_type_lower == "postgresql":
-            connect_args = {"connect_timeout": 10}
-        elif db_type_lower == "mysql":
+        if db_type_lower in {"postgresql", "mysql"}:
             connect_args = {"connect_timeout": 10}
         elif db_type_lower == "mssql":
             connect_args = {"login_timeout": 10}
 
-        if db_type_lower in ["sqlite", "file_upload"]:
-            engine = create_engine(url, connect_args={"check_same_thread": False})
+        if db_type_lower in {"sqlite", "file_upload"}:
+            engine = create_engine(url, connect_args={"check_same_thread": False, "timeout": 10})
         else:
             engine = create_engine(url, connect_args=connect_args, pool_pre_ping=True)
-            
-        with engine.connect() as conn:
-            # Run a minimal query to confirm the connection is live
-            conn.execute(text("SELECT 1"))
-            
-        return True, ""
-    except Exception as e:
-        error_msg = sanitize_error_message(str(e))
-        logger.error(f"Database connection test failed for {db_type}: {error_msg}")
-        return False, error_msg
 
-def process_file_upload(file_name: str, file_content: bytes) -> Tuple[str, str]:
-    """
-    Loads an uploaded CSV or Excel spreadsheet, writes it to a local SQLite database,
-    and returns a tuple containing the (absolute_sqlite_path, table_name).
-    """
-    # Ensure local data storage directory exists
-    os.makedirs(DATA_DIR, exist_ok=True)
-    
-    # Parse file format
-    file_ext = os.path.splitext(file_name)[1].lower()
-    if file_ext == ".csv":
-        df = pd.read_csv(io.BytesIO(file_content))
-    elif file_ext in [".xlsx", ".xls"]:
-        df = pd.read_excel(io.BytesIO(file_content))
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        return True, ""
+    except ValueError as exc:
+        return False, str(exc)
+    except Exception as exc:
+        error_msg = sanitize_error_message(str(exc))
+        logger.error("Database connection test failed for %s: %s", db_type, error_msg)
+        return False, "Database connection test failed"
+    finally:
+        if engine is not None:
+            engine.dispose()
+
+
+def _read_upload_frame(file_name: str, file_content: bytes) -> pd.DataFrame:
+    if len(file_content) > settings.MAX_UPLOAD_BYTES:
+        raise ValueError(f"Uploaded files must be at most {settings.MAX_UPLOAD_BYTES} bytes")
+
+    suffix = Path(file_name or "").suffix.lower()
+    read_kwargs = {"nrows": settings.MAX_UPLOAD_ROWS + 1}
+    if suffix == ".csv":
+        frame = pd.read_csv(io.BytesIO(file_content), **read_kwargs)
+    elif suffix in {".xlsx", ".xls"}:
+        frame = pd.read_excel(io.BytesIO(file_content), **read_kwargs)
     else:
         raise ValueError("Unsupported file format. Only CSV and Excel files are supported.")
-        
-    # Cleanse table name: alphanumeric characters and underscores only
-    clean_name = re.sub(r"[^a-zA-Z0-9_]", "_", os.path.splitext(file_name)[0])
-    table_name = clean_name.strip("_").lower()
-    if not table_name:
-        table_name = "uploaded_table"
-        
-    # Generate unique SQLite database file path
-    db_filename = f"{uuid.uuid4().hex}.db"
-    db_path = os.path.abspath(os.path.join(DATA_DIR, db_filename))
-    
-    # Load DataFrame into SQLite
+
+    if len(frame) > settings.MAX_UPLOAD_ROWS:
+        raise ValueError(f"Uploaded files must contain at most {settings.MAX_UPLOAD_ROWS} rows")
+    if len(frame.columns) > settings.MAX_UPLOAD_COLUMNS:
+        raise ValueError(f"Uploaded files must contain at most {settings.MAX_UPLOAD_COLUMNS} columns")
+    return frame
+
+
+def process_file_upload(file_name: str, file_content: bytes) -> Tuple[str, str]:
+    """Load a bounded CSV/Excel upload into an application-owned SQLite database."""
+    if not file_name:
+        raise ValueError("An uploaded file name is required")
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    frame = _read_upload_frame(file_name, file_content)
+
+    table_name = re.sub(r"[^a-zA-Z0-9_]", "_", Path(file_name).stem).strip("_").lower()
+    table_name = table_name or "uploaded_table"
+    db_path = validate_sqlite_path(str(DATA_DIR / f"{uuid.uuid4().hex}.db"))
+
     engine = create_engine(f"sqlite:///{db_path}", connect_args={"check_same_thread": False})
-    df.to_sql(table_name, con=engine, index=False, if_exists="replace")
-    engine.dispose()
-    
+    try:
+        frame.to_sql(table_name, con=engine, index=False, if_exists="replace")
+    except Exception:
+        Path(db_path).unlink(missing_ok=True)
+        raise
+    finally:
+        engine.dispose()
     return db_path, table_name

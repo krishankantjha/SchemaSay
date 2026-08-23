@@ -1,13 +1,13 @@
 from datetime import datetime
-from typing import Optional
-from pydantic import BaseModel, model_validator
+from typing import Literal, Optional
+from pydantic import BaseModel, Field, model_validator
 
 class ConnectionBase(BaseModel):
     """
     Base connection schema containing fields common across validation stages.
     """
-    name: str
-    db_type: str  # 'postgresql', 'mysql', 'mssql', 'sqlite', 'file_upload'
+    name: str = Field(..., min_length=1, max_length=128)
+    db_type: Literal["postgresql", "mysql", "mssql", "sqlite", "file_upload"]
 
 class ConnectionCreate(ConnectionBase):
     """
@@ -15,11 +15,11 @@ class ConnectionCreate(ConnectionBase):
     Enforces conditional validation: server configurations require host/port/credentials,
     while local SQLite and uploads only require file names.
     """
-    host: Optional[str] = None
-    port: Optional[int] = None
-    username: Optional[str] = None
-    password: Optional[str] = None
-    database_name: str  # Represents database name or SQLite local path
+    host: Optional[str] = Field(default=None, max_length=253)
+    port: Optional[int] = Field(default=None, ge=1, le=65535)
+    username: Optional[str] = Field(default=None, max_length=256)
+    password: Optional[str] = Field(default=None, max_length=1024)
+    database_name: str = Field(..., min_length=1, max_length=4096)
 
     @model_validator(mode='before')
     @classmethod
@@ -69,12 +69,12 @@ class ConnectionTest(BaseModel):
     """
     Input validation schema for testing connection credentials before saving.
     """
-    db_type: str
-    host: Optional[str] = None
-    port: Optional[int] = None
-    username: Optional[str] = None
-    password: Optional[str] = None
-    database_name: str
+    db_type: Literal["postgresql", "mysql", "mssql", "sqlite", "file_upload"]
+    host: Optional[str] = Field(default=None, max_length=253)
+    port: Optional[int] = Field(default=None, ge=1, le=65535)
+    username: Optional[str] = Field(default=None, max_length=256)
+    password: Optional[str] = Field(default=None, max_length=1024)
+    database_name: str = Field(..., min_length=1, max_length=4096)
 
     @model_validator(mode='before')
     @classmethod
@@ -98,6 +98,8 @@ class AuditLogResponse(BaseModel):
     id: int
     user_id: int
     connection_id: Optional[int] = None
+    connection_name: Optional[str] = None
+    query_type: str = "assistant"
     question: str
     sql_query: str
     execution_duration_ms: Optional[int] = None

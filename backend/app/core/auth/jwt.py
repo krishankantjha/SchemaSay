@@ -1,7 +1,8 @@
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional
-from jose import JWTError, jwt
+import jwt
+from jwt import InvalidTokenError
 from app.config import settings
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
@@ -20,12 +21,16 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     # Assign unique token identifier for blacklist validation
     token_jti = str(uuid.uuid4())
     
+    now = datetime.now(timezone.utc)
     to_encode.update({
         "exp": expire,
-        "jti": token_jti
+        "iat": now,
+        "iss": settings.JWT_ISSUER,
+        "aud": settings.JWT_AUDIENCE,
+        "jti": token_jti,
     })
     
-    encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+    encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm="HS256")
     return encoded_jwt
 
 def decode_access_token(token: str) -> Optional[dict]:
@@ -34,7 +39,13 @@ def decode_access_token(token: str) -> Optional[dict]:
     Returns the parsed payload dictionary if valid, or None if signature is invalid/expired.
     """
     try:
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        payload = jwt.decode(
+            token,
+            settings.SECRET_KEY,
+            algorithms=["HS256"],
+            issuer=settings.JWT_ISSUER,
+            audience=settings.JWT_AUDIENCE,
+        )
         return payload
-    except JWTError:
+    except InvalidTokenError:
         return None

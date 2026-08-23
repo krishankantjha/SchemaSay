@@ -1,7 +1,7 @@
 from datetime import datetime
 import re
 from typing import Optional
-from pydantic import BaseModel, EmailStr, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 class UserCreate(BaseModel):
     """
@@ -9,8 +9,8 @@ class UserCreate(BaseModel):
     Enforces valid email format and strong password complexity rules.
     """
     email: EmailStr
-    password: str
-    full_name: Optional[str] = None
+    password: str = Field(..., min_length=8, max_length=128)
+    full_name: Optional[str] = Field(default=None, max_length=128)
 
     @field_validator('password')
     @classmethod
@@ -55,7 +55,7 @@ class UserLogin(BaseModel):
     Validation schema for incoming login requests.
     """
     email: EmailStr
-    password: str
+    password: str = Field(..., max_length=128)
 
 class Token(BaseModel):
     """

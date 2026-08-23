@@ -1,3 +1,4 @@
+import hashlib
 import secrets
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, status, Request
@@ -14,6 +15,16 @@ from app.core.auth.jwt import create_access_token, decode_access_token
 from app.utils.rate_limiter import login_limiter, register_limiter
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
+
+
+def _hash_refresh_token(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _cleanup_expired_tokens(db: Session) -> None:
+    now = datetime.now(timezone.utc)
+    db.query(RefreshToken).filter(RefreshToken.expires_at < now).delete(synchronize_session=False)
+    db.query(RevokedToken).filter(RevokedToken.expires_at < now).delete(synchronize_session=False)
 
 # Define the OAuth2 security scheme for extracting JWT tokens from request headers
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/v1/auth/login")
@@ -143,8 +154,9 @@ def login(request: Request, credentials: UserLogin, db: Session = Depends(get_db
     access_token = create_access_token(data={"sub": user.email})
     refresh_token_str = secrets.token_hex(32)
     
+    _cleanup_expired_tokens(db)
     db_refresh_token = RefreshToken(
-        token=refresh_token_str,
+        token_hash=_hash_refresh_token(refresh_token_str),
         user_id=user.id,
         expires_at=datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
     )
@@ -162,7 +174,10 @@ def refresh(payload: TokenRefreshRequest, db: Session = Depends(get_db)):
     """
     Rotates the session by consuming a valid refresh token and issuing new pairs.
     """
-    db_token = db.query(RefreshToken).filter(RefreshToken.token == payload.refresh_token).first()
+    _cleanup_expired_tokens(db)
+    db_token = db.query(RefreshToken).filter(
+        RefreshToken.token_hash == _hash_refresh_token(payload.refresh_token)
+    ).first()
     
     # Verify token existence, status, and expiration
     if not db_token:
@@ -196,15 +211,24 @@ def refresh(payload: TokenRefreshRequest, db: Session = Depends(get_db)):
             detail="User account is inactive or disabled"
         )
 
-    # Consume single-use refresh token
-    db_token.revoked = True
-    
+    # Consume the token atomically. A concurrent request must not be able to
+    # consume the same refresh token twice.
+    consumed = db.query(RefreshToken).filter(
+        RefreshToken.id == db_token.id,
+        RefreshToken.revoked.is_(False),
+    ).update({"revoked": True}, synchronize_session=False)
+    if consumed != 1:
+        db.rollback()
+        db.query(RefreshToken).filter(RefreshToken.user_id == db_token.user_id).update({"revoked": True})
+        db.commit()
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Refresh token reuse detected")
+
     # Create new credentials set
     new_access_token = create_access_token(data={"sub": user.email})
     new_refresh_token_str = secrets.token_hex(32)
     
     new_db_token = RefreshToken(
-        token=new_refresh_token_str,
+        token_hash=_hash_refresh_token(new_refresh_token_str),
         user_id=user.id,
         expires_at=datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
     )
@@ -239,17 +263,18 @@ def logout(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
             detail="Invalid token claims"
         )
 
-    # Save JTI to blacklist
+    # Save JTI to blacklist idempotently
     exp_datetime = datetime.fromtimestamp(exp, timezone.utc)
-    revoked_token = RevokedToken(jti=jti, expires_at=exp_datetime)
-    db.add(revoked_token)
+    if not db.query(RevokedToken).filter(RevokedToken.jti == jti).first():
+        db.add(RevokedToken(jti=jti, expires_at=exp_datetime))
+    _cleanup_expired_tokens(db)
     
     # Terminate active user sessions
     user = db.query(User).filter(User.email == email).first()
     if user:
         db.query(RefreshToken).filter(
             RefreshToken.user_id == user.id,
-            RefreshToken.revoked == False
+            RefreshToken.revoked.is_(False)
         ).update({"revoked": True})
 
     db.commit()
