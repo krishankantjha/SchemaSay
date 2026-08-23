@@ -167,9 +167,9 @@ def heuristic_offline_compiler(question: str, db_type: str, schema_metadata: Lis
         if fk_col and referred_col:
             # Handle MSSQL SELECT TOP dialect conversion for JOIN query
             if db_type_lower == "mssql" and limit_num:
-                query = f"SELECT TOP {limit_num} {columns_clause} FROM {primary_table} JOIN {secondary_table} ON {primary_table}.{fk_col} = {secondary_table}.{referred_col}"
+                query = f"SELECT TOP {limit_num} {columns_clause} FROM {primary_table} JOIN {secondary_table} ON {primary_table}.{fk_col} = {secondary_table}.{referred_col}"  # nosec B608: schema-derived identifiers; output is centrally validated
             else:
-                query = f"SELECT {columns_clause} FROM {primary_table} JOIN {secondary_table} ON {primary_table}.{fk_col} = {secondary_table}.{referred_col}"
+                query = f"SELECT {columns_clause} FROM {primary_table} JOIN {secondary_table} ON {primary_table}.{fk_col} = {secondary_table}.{referred_col}"  # nosec B608: schema-derived identifiers; output is centrally validated
                 
             if order_clause:
                 query += f" {order_clause}"
@@ -181,14 +181,14 @@ def heuristic_offline_compiler(question: str, db_type: str, schema_metadata: Lis
     if db_type_lower == "mssql":
         # MSSQL select top mapping
         if limit_num:
-            query_parts = [f"SELECT TOP {limit_num} {columns_clause} FROM {primary_table}"]
+            query_parts = [f"SELECT TOP {limit_num} {columns_clause} FROM {primary_table}"]  # nosec B608: schema-derived identifiers; output is centrally validated
         else:
-            query_parts = [f"SELECT {columns_clause} FROM {primary_table}"]
+            query_parts = [f"SELECT {columns_clause} FROM {primary_table}"]  # nosec B608: schema-derived identifiers; output is centrally validated
         if order_clause:
             query_parts.append(order_clause)
     else:
         # Standard SQL
-        query_parts = [f"SELECT {columns_clause} FROM {primary_table}"]
+        query_parts = [f"SELECT {columns_clause} FROM {primary_table}"]  # nosec B608: schema-derived identifiers; output is centrally validated
         if order_clause:
             query_parts.append(order_clause)
         if limit_clause:

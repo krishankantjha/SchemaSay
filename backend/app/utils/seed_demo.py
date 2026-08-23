@@ -1,8 +1,7 @@
 import os
 import sqlite3
-import datetime
 from sqlalchemy.orm import Session
-from app.database import engine, SessionLocal, Base
+from app.database import engine, Base
 from app.models.user import User
 from app.models.connection import DatabaseConnection, QueryAuditLog, DatabaseSchemaCache
 from app.core.auth.hashing import hash_password
