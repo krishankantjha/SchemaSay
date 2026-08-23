@@ -1,4 +1,6 @@
 from typing import List
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -11,6 +13,7 @@ from app.core.connections.connector import get_connection
 from app.core.schema.introspector import reflect_database_schema
 
 router = APIRouter(prefix="/schema", tags=["Database Schema Introspection"])
+logger = logging.getLogger("schemasay.schema")
 
 @router.post("/{connection_id}/sync", status_code=status.HTTP_200_OK)
 def sync_connection_schema(connection_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -34,11 +37,12 @@ def sync_connection_schema(connection_id: int, db: Session = Depends(get_db), cu
         # Obtain connection engine and reflect database schema structure
         engine = get_connection(connection)
         metadata_list = reflect_database_schema(engine)
-    except Exception as e:
+    except Exception:
+        logger.exception("Failed to connect and introspect database schema")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Failed to connect and introspect database schema: {str(e)}"
-        )
+            detail="Failed to connect and introspect database schema"
+        ) from None
         
     # Clear old schema caches for this connection
     db.query(DatabaseSchemaCache).filter(

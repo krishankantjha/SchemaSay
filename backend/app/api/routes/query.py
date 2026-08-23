@@ -1,6 +1,6 @@
 import uuid
 import logging
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
@@ -39,7 +39,7 @@ class DirectQueryResponse(BaseModel):
     rows: List[Dict[str, Any]] = Field(default_factory=list)
     row_count: int
     execution_time_ms: float
-    truncated: bool
+    truncated: bool = False
     query_id: str
     chart_config: ChartConfig = Field(default_factory=ChartConfig)
 
@@ -58,7 +58,8 @@ async def execute_raw_query(
     """
     # Enforce request-scoped rate limiting to prevent Denial of Service (DoS)
     client_ip = request.client.host if request.client else "unknown"
-    if query_limiter.check_rate_limit(client_ip):
+    limiter_key = f"user:{current_user.id}:ip:{client_ip}"
+    if query_limiter.check_rate_limit(limiter_key):
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Too many query execution requests. Please wait before trying again."
@@ -68,7 +69,7 @@ async def execute_raw_query(
     connection = get_user_connection_or_404(payload.connection_id, current_user.id, db)
     
     # 2. Check AST query statement security limits
-    is_safe, safety_error = validate_sql_structure(payload.sql_query)
+    is_safe, safety_error = validate_sql_structure(payload.sql_query, connection.db_type)
     if not is_safe:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -111,7 +112,7 @@ async def execute_raw_query(
             )
         if "Database Error" in result.error_message or "syntax error" in result.error_message.lower():
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail=result.error_message
             )
         raise HTTPException(
@@ -142,7 +143,7 @@ async def execute_raw_query(
         rows=rows,
         row_count=len(rows),
         execution_time_ms=result.execution_time_ms,
-        truncated=len(rows) >= 10000,
+        truncated=result.truncated,
         query_id=query_id,
         chart_config=chart_config
     )

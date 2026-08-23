@@ -1,8 +1,8 @@
 import time
 import logging
 from abc import ABC, abstractmethod
-from typing import List, Dict, Tuple, Optional
-from openai import OpenAI, APIConnectionError, APIStatusError
+from typing import Tuple, Optional
+from openai import APIConnectionError, APIStatusError
 from app.config import settings
 from app.core.ai.query_generator import get_cached_client, is_api_key_valid
 
