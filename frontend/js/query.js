@@ -21,7 +21,7 @@ const QueryResults = (() => {
 
     if (!container) return;
 
-    const { columns, rows, rowCount, executionTime, chartConfig } = result;
+    const { columns = [], rows = [], rowCount = rows.length, executionTime = 0, chartConfig = null, truncated = false } = result;
 
     container.innerHTML = `
       <!-- Tabs Bar -->
@@ -37,6 +37,7 @@ const QueryResults = (() => {
           <span class="results-count">
             Query Results <strong>(${rowCount} row${rowCount !== 1 ? 's' : ''})</strong>
             <span style="margin-left:8px;font-size:var(--text-xs);color:var(--text-muted);">${DOM.formatDuration(executionTime * 1000)}</span>
+            ${truncated ? '<span class="results-truncated" title="The server limited the result set">Showing a limited result set</span>' : ''}
           </span>
           <button class="btn btn-ghost btn-sm" id="export-csv-btn" style="display:flex;align-items:center;gap:6px;">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
@@ -54,11 +55,18 @@ const QueryResults = (() => {
           <select class="chart-type-select" id="chart-type-select">
             <option value="bar" ${chartConfig?.chart_type === 'bar' ? 'selected' : ''}>Bar Chart</option>
             <option value="line" ${chartConfig?.chart_type === 'line' ? 'selected' : ''}>Line Chart</option>
-            <option value="doughnut">Doughnut</option>
+            <option value="pie" ${chartConfig?.chart_type === 'pie' ? 'selected' : ''}>Pie Chart</option>
+            <option value="doughnut" ${chartConfig?.chart_type === 'doughnut' ? 'selected' : ''}>Doughnut</option>
+            <option value="scatter" ${chartConfig?.chart_type === 'scatter' ? 'selected' : ''}>Scatter Plot</option>
+            <option value="histogram" ${chartConfig?.chart_type === 'histogram' ? 'selected' : ''}>Histogram</option>
+            <option value="table" ${chartConfig?.chart_type === 'table' ? 'selected' : ''}>Table only</option>
           </select>
         </div>
         <div class="chart-canvas-wrap">
           <canvas id="main-result-chart"></canvas>
+          <div id="chart-empty-message" class="state-empty" style="display:none;padding:32px 16px;">
+            <p class="state-empty-desc">No compatible chart is available for this result set.</p>
+          </div>
         </div>
       </div>
 
@@ -92,7 +100,7 @@ const QueryResults = (() => {
 
     // Chart type change
     container.querySelector('#chart-type-select')?.addEventListener('change', (e) => {
-      Charts.changeType('main-result-chart', e.target.value);
+      _renderChart(e.target.value, columns, rows, chartConfig);
     });
 
     // Regenerate insights
@@ -101,26 +109,57 @@ const QueryResults = (() => {
     // Render table
     _renderTable(columns, rows, container);
 
-    // Render chart
-    setTimeout(() => {
-      if (chartConfig) {
-        Charts.renderFromConfig('main-result-chart', chartConfig, rows);
-      } else {
-        // Fallback: use first two columns
-        const xCol = columns[0];
-        const yCol = columns[1];
-        if (xCol && yCol) {
-          Charts.render('main-result-chart', 'bar',
-            rows.map(r => r[xCol]),
-            rows.map(r => parseFloat(r[yCol]) || 0),
-            yCol, 'Query Results'
-          );
-        }
-      }
-    }, 100);
+    // Render chart after the panel has been laid out.
+    setTimeout(() => _renderChart(chartConfig?.chart_type, columns, rows, chartConfig), 100);
+  }
 
-    // Auto-generate insights
-    _generateInsights(columns, rows);
+  function _renderChart(typeOverride, columns, rows, chartConfig) {
+    const chartCanvas = document.getElementById('main-result-chart');
+    if (!chartCanvas) return;
+
+    const emptyMessage = document.getElementById('chart-empty-message');
+    const showEmpty = (visible) => {
+      if (emptyMessage) emptyMessage.style.display = visible ? 'block' : 'none';
+      if (chartCanvas) chartCanvas.style.display = visible ? 'none' : 'block';
+    };
+    const requestedType = typeOverride || chartConfig?.chart_type || 'bar';
+
+    if (!rows.length || (columns.length < 2 && requestedType !== 'histogram')) {
+      Charts.destroy('main-result-chart');
+      showEmpty(true);
+      return;
+    }
+
+    if (chartConfig) {
+      const effectiveConfig = { ...chartConfig, chart_type: typeOverride || chartConfig.chart_type };
+      const chart = Charts.renderFromConfig('main-result-chart', effectiveConfig, rows);
+      showEmpty(!chart);
+      return;
+    }
+
+    const chartType = requestedType;
+    if (chartType === 'histogram') {
+      const chart = Charts.renderFromConfig('main-result-chart', { chart_type: 'histogram', x_axis: columns[0] }, rows);
+      showEmpty(!chart);
+      return;
+    }
+    if (chartType === 'scatter') {
+      const points = rows.map(row => ({ x: Number(row[columns[0]]), y: Number(row[columns[1]]) }))
+        .filter(point => Number.isFinite(point.x) && Number.isFinite(point.y));
+      const chart = Charts.render('main-result-chart', 'scatter', points, points, columns[1], 'Query Results');
+      showEmpty(!chart);
+      return;
+    }
+
+    const chart = Charts.render(
+      'main-result-chart',
+      chartType === 'histogram' ? 'bar' : chartType,
+      rows.map(row => row[columns[0]]),
+      rows.map(row => Number(row[columns[1]]) || 0),
+      columns[1],
+      'Query Results',
+    );
+    showEmpty(!chart);
   }
 
   function _switchTab(container, tab) {

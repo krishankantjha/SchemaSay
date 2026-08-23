@@ -84,6 +84,16 @@ const Charts = (() => {
         hoverBorderWidth: 3,
       };
     }
+    if (type === 'scatter') {
+      return {
+        label,
+        data,
+        backgroundColor: CHART_COLORS.bgAlpha(colors[0], 0.65),
+        borderColor: colors[0],
+        pointRadius: 5,
+        pointHoverRadius: 7,
+      };
+    }
     return { label, data };
   }
 
@@ -132,28 +142,31 @@ const Charts = (() => {
       },
     };
 
-    if (type === 'bar' || type === 'line') {
-      base.scales = {
-        x: {
-          grid: { display: false },
-          ticks: { color: tickColor, font: CHART_DEFAULTS.font },
-          border: { display: false },
-        },
-        y: {
-          beginAtZero: true,
-          grid: { color: gridColor, drawBorder: false },
-          ticks: {
-            color: tickColor,
-            font: CHART_DEFAULTS.font,
-            callback: (v) => {
-              if (v >= 1000000) return (v/1000000).toFixed(1) + 'M';
-              if (v >= 1000) return (v/1000).toFixed(0) + 'K';
-              return v;
-            },
+    if (type === 'bar' || type === 'line' || type === 'scatter') {
+      const numericAxis = {
+        beginAtZero: type !== 'scatter',
+        grid: { color: gridColor, drawBorder: false },
+        ticks: {
+          color: tickColor,
+          font: CHART_DEFAULTS.font,
+          callback: (v) => {
+            if (v >= 1000000) return (v/1000000).toFixed(1) + 'M';
+            if (v >= 1000) return (v/1000).toFixed(0) + 'K';
+            return v;
           },
-          border: { display: false },
         },
+        border: { display: false },
       };
+      base.scales = type === 'scatter'
+        ? { x: numericAxis, y: numericAxis }
+        : {
+            x: {
+              grid: { display: false },
+              ticks: { color: tickColor, font: CHART_DEFAULTS.font },
+              border: { display: false },
+            },
+            y: numericAxis,
+          };
     }
 
     return base;
@@ -162,7 +175,7 @@ const Charts = (() => {
   /**
    * Render or update a chart
    * @param {string} canvasId - ID of the <canvas> element
-   * @param {string} type     - 'bar' | 'line' | 'doughnut'
+   * @param {string} type     - 'bar' | 'line' | 'pie' | 'doughnut' | 'scatter'
    * @param {Array}  labels
    * @param {Array}  data     - numeric values
    * @param {string} dataLabel - dataset label
@@ -209,10 +222,34 @@ const Charts = (() => {
    * Render from a backend chart_config + rows
    */
   function renderFromConfig(canvasId, chartConfig, rows) {
-    if (!chartConfig || !rows?.length) return;
+    if (!chartConfig || !rows?.length) return null;
 
     const { chart_type, x_axis, y_axis, title } = chartConfig;
+    if (!['bar', 'line', 'pie', 'doughnut', 'scatter', 'histogram'].includes(chart_type)) return null;
+    if (!x_axis || (chart_type !== 'histogram' && !y_axis)) return null;
     const visibleRows = rows.slice(0, 5000);
+    if (chart_type === 'histogram') {
+      const values = visibleRows.map(row => Number(row[x_axis])).filter(Number.isFinite);
+      if (!values.length) return null;
+      const min = Math.min(...values);
+      const max = Math.max(...values);
+      if (min === max) {
+        return render(canvasId, 'bar', [String(min)], [values.length], 'Frequency', title || 'Distribution');
+      }
+      const binCount = Math.min(12, Math.max(5, Math.ceil(Math.sqrt(values.length))));
+      const binSize = (max - min) / binCount;
+      const counts = Array(binCount).fill(0);
+      values.forEach(value => {
+        const index = Math.min(binCount - 1, Math.floor((value - min) / binSize));
+        counts[index] += 1;
+      });
+      const labels = counts.map((_, index) => {
+        const start = min + index * binSize;
+        const end = start + binSize;
+        return `${start.toPrecision(4)}–${end.toPrecision(4)}`;
+      });
+      return render(canvasId, 'bar', labels, counts, 'Frequency', title || 'Distribution');
+    }
     if (chart_type === 'scatter') {
       const points = visibleRows.map(row => ({
         x: Number(row[x_axis]),
@@ -221,7 +258,7 @@ const Charts = (() => {
       return render(canvasId, 'scatter', points, points, y_axis, title);
     }
 
-    const valueAxis = chart_type === 'histogram' ? x_axis : y_axis;
+    const valueAxis = y_axis;
     const labels = visibleRows.map(row => String(row[x_axis] ?? ''));
     const data = visibleRows.map(row => {
       const value = Number(row[valueAxis]);
@@ -230,6 +267,7 @@ const Charts = (() => {
     const type = chart_type === 'bar' ? 'bar'
       : chart_type === 'line' ? 'line'
       : chart_type === 'pie' ? 'pie'
+      : chart_type === 'doughnut' ? 'doughnut'
       : chart_type === 'histogram' ? 'bar'
       : 'bar';
 
