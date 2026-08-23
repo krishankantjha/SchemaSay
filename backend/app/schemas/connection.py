@@ -48,6 +48,31 @@ class ConnectionCreate(ConnectionBase):
                 
         return data
 
+class ConnectionUpdate(BaseModel):
+    """
+    Input schema for editing saved connection metadata and optional credentials.
+    A blank password preserves the existing encrypted credential.
+    """
+    name: str = Field(..., min_length=1, max_length=128)
+    db_type: Literal["postgresql", "mysql", "mssql", "sqlite", "file_upload"]
+    host: Optional[str] = Field(default=None, max_length=253)
+    port: Optional[int] = Field(default=None, ge=1, le=65535)
+    username: Optional[str] = Field(default=None, max_length=256)
+    password: Optional[str] = Field(default=None, max_length=1024)
+    database_name: str = Field(..., min_length=1, max_length=4096)
+
+    @model_validator(mode='before')
+    @classmethod
+    def validate_connection_parameters(cls, data: dict) -> dict:
+        db_type = data.get("db_type", "").lower()
+        if db_type in {"postgresql", "mysql", "mssql"}:
+            for field in ("host", "port", "username"):
+                val = data.get(field)
+                if val is None or (isinstance(val, str) and not val.strip()):
+                    raise ValueError(f"Field '{field}' is required for database type: {db_type}")
+        return data
+
+
 class ConnectionResponse(ConnectionBase):
     """
     Output serialization schema for returning saved connection metadata.
@@ -90,6 +115,13 @@ class ConnectionTest(BaseModel):
                 if val is None or (isinstance(val, str) and not val.strip()):
                     raise ValueError(f"Field '{field}' is required for database type: {db_type}")
         return data
+
+class ConnectionTestResponse(BaseModel):
+    """Result returned when the server tests an already saved connection."""
+    success: bool
+    healthy: bool
+    message: str
+
 
 class AuditLogResponse(BaseModel):
     """
