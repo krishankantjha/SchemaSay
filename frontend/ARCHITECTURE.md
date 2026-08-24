@@ -2,7 +2,7 @@
 
 ## Baseline
 
-The remediation baseline is commit `7cb497bd8a5ffb8226c5f4c0518c27d4c9e41d8a` on `main`. The working tree also contains local, untracked audit artifacts that are not product changes and must not be committed unless separately approved.
+The current frontend baseline is the latest validated commit on `main`. Local audit artifacts are not product changes and must remain untracked.
 
 ## Purpose
 
@@ -67,14 +67,8 @@ The following rules apply to every subsequent phase:
 7. User-controlled and backend-returned text must not be interpolated into HTML without escaping.
 8. The visual system remains the existing green/teal analytics identity with shared spacing, typography, color, radius, focus, and motion tokens.
 9. CodeMirror and Chart.js remain the only substantial browser libraries unless a later phase documents a specific need and approval.
-10. No phase may push to `main` without explicit user approval.
+10. Changes to `main` must follow the repository’s merge-first review and release-validation workflow.
 
-## Phase gates
+## Quality gates
 
-Each implementation phase must finish with three checks before the next phase begins:
-
-- The relevant live and error paths are exercised locally.
-- The changed files and contract assumptions are reviewed against the FastAPI backend.
-- The work is summarized for approval before any commit or push decision.
-
-The final release gate requires a fresh-session browser test, authenticated API integration checks, responsive checks, accessibility checks, demo-mode isolation, deployment-variable verification, and a clean Git working tree except for intentionally uncommitted audit artifacts.
+Every frontend change should exercise the relevant success and error paths locally and review changed contract assumptions against the FastAPI backend. Before release, run frontend syntax and contract checks, authenticated API integration checks where credentials are available, responsive and accessibility checks, demo-mode isolation checks, deployment-variable verification, and a clean tracked working tree. Local audit artifacts may remain untracked and must not be included in product commits.
