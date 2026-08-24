@@ -52,4 +52,11 @@ jobs:
         with:
           node-version: 22
       - name: JavaScript syntax
-        run: node --check frontend/js/*.js
+        run: |
+          for file in frontend/js/*.js; do
+            node --check "$file"
+          done
+      - name: Frontend contract smoke tests
+        run: node frontend/tests/contract-smoke.js
+      - name: Streamlit entry point syntax
+        run: python -m py_compile frontend/app.py
