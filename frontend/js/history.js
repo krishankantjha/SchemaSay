@@ -6,8 +6,18 @@
 const History = (() => {
   let _filter = 'all';
   let _search = '';
+  let _page = 0;
+  let _hasMore = true;
+  let _loading = false;
+  let _isCurrentView = () => true;
 
-  async function render(container) {
+  async function render(container, renderToken = container.__viewRenderToken) {
+    _isCurrentView = () => container.__viewRenderToken === renderToken;
+    _filter = 'all';
+    _search = '';
+    _page = 0;
+    _hasMore = true;
+    _loading = false;
     container.innerHTML = `
       <div class="page-view">
         <div class="page-header-row">
@@ -19,9 +29,9 @@ const History = (() => {
 
         <div class="history-filters">
           <div class="filter-chips">
-            <button class="filter-chip active" data-filter="all">All</button>
-            <button class="filter-chip" data-filter="success">Successful</button>
-            <button class="filter-chip" data-filter="failed">Failed</button>
+            <button class="filter-chip active" data-filter="all" type="button" aria-pressed="true">All</button>
+            <button class="filter-chip" data-filter="success" type="button" aria-pressed="false">Successful</button>
+            <button class="filter-chip" data-filter="failed" type="button" aria-pressed="false">Failed</button>
           </div>
           <div class="history-search">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
@@ -40,8 +50,12 @@ const History = (() => {
     // Filter chips
     container.querySelectorAll('.filter-chip').forEach(chip => {
       chip.addEventListener('click', () => {
-        container.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+        container.querySelectorAll('.filter-chip').forEach(c => {
+          c.classList.remove('active');
+          c.setAttribute('aria-pressed', 'false');
+        });
         chip.classList.add('active');
+        chip.setAttribute('aria-pressed', 'true');
         _filter = chip.dataset.filter;
         _renderList();
       });
@@ -53,26 +67,39 @@ const History = (() => {
       _renderList();
     });
 
-    await _loadHistory();
+    await _loadHistory(true);
   }
 
-  async function _loadHistory() {
+  async function _loadHistory(reset = false) {
+    if (_loading || (!reset && !_hasMore)) return;
+    _loading = true;
+    const nextPage = reset ? 1 : _page + 1;
     try {
-      const history = await api.getQueryHistory(1, 50);
-      AppState.set({ queryHistory: history });
+      const history = await api.getQueryHistory(nextPage, 50);
+      if (!_isCurrentView()) return;
+      const existing = reset ? [] : (AppState.get('queryHistory') || []);
+      const rows = Array.isArray(history) ? history : [];
+      AppState.set({ queryHistory: existing.concat(rows) });
+      _page = nextPage;
+      _hasMore = rows.length >= 50;
       _renderList();
     } catch (err) {
+      if (!_isCurrentView()) return;
       const c = document.getElementById('history-list-container');
-      if (c) c.innerHTML = `
-        <div class="state-error">
+      if (c && reset) c.innerHTML = `
+        <div class="state-error" role="alert">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/></svg>
           Failed to load history: ${DOM.escape(err.message)}
         </div>
       `;
+      else Toast.error(`Could not load more history. ${DOM.escape(err.message)}`);
+    } finally {
+      _loading = false;
     }
   }
 
   function _renderList() {
+    if (!_isCurrentView()) return;
     const container = document.getElementById('history-list-container');
     if (!container) return;
 
@@ -107,8 +134,8 @@ const History = (() => {
         <div class="history-card-header">
           <div class="history-question">${DOM.escape(entry.question || 'Direct SQL query')}</div>
           <div class="history-actions">
-            <button class="btn btn-secondary btn-sm history-view-btn" data-id="${entry.id}">View</button>
-            <button class="btn btn-primary btn-sm history-rerun-btn" data-id="${entry.id}">Re-run</button>
+            <button class="btn btn-secondary btn-sm history-view-btn" type="button" data-id="${entry.id}" aria-expanded="false">View</button>
+            <button class="btn btn-primary btn-sm history-rerun-btn" type="button" data-id="${entry.id}">Re-run</button>
           </div>
         </div>
         <div class="history-card-meta">
@@ -129,20 +156,40 @@ const History = (() => {
           </span>
         </div>
         ${entry.sql_query ? `
-          <div class="history-sql-preview" data-id="${entry.id}">
+          <div class="history-sql-preview" data-id="${entry.id}" hidden>
             ${DOM.escape(entry.sql_query)}
           </div>
         ` : ''}
       </div>
     `).join('')}</div>`;
 
+    if (_hasMore) {
+      container.insertAdjacentHTML('beforeend', '<button class="btn btn-secondary history-load-more" type="button">Load more history</button>');
+    }
+
     // Bind actions
+    container.querySelectorAll('.history-view-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const entry = history.find(h => String(h.id) === String(btn.dataset.id));
+        if (!entry) return;
+        const preview = btn.closest('.history-card')?.querySelector('.history-sql-preview');
+        if (!preview) {
+          Toast.info('This history entry does not contain SQL text.');
+          return;
+        }
+        const isHidden = preview.hasAttribute('hidden');
+        preview.toggleAttribute('hidden', !isHidden);
+        btn.textContent = isHidden ? 'Hide' : 'View';
+        btn.setAttribute('aria-expanded', String(isHidden));
+      });
+    });
     container.querySelectorAll('.history-rerun-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         const entry = history.find(h => String(h.id) === String(btn.dataset.id));
         if (entry) _rerun(entry);
       });
     });
+    container.querySelector('.history-load-more')?.addEventListener('click', () => _loadHistory(false));
   }
 
   function _rerun(entry) {
