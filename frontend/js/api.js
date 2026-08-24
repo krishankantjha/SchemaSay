@@ -124,6 +124,7 @@ async function _refreshAccessToken() {
   });
   if (!response.ok) return false;
   const data = await response.json();
+  if (!data.access_token || !data.refresh_token) return false;
   AppState.saveToken(data.access_token);
   AppState.saveRefreshToken(data.refresh_token);
   return true;
@@ -521,6 +522,12 @@ const api = {
       body: JSON.stringify({ rows, columns, question, sql_query: sqlQuery || 'SELECT results' }),
     });
     return _normalizeInsightsResponse(data);
+  },
+
+  // ---- Session ----
+
+  async refreshSession() {
+    return _refreshAccessToken();
   },
 
   // ---- Query History ----

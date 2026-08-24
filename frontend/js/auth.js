@@ -228,7 +228,15 @@ const Auth = (() => {
 
   async function checkSession() {
     const token = AppState.loadToken();
-    if (!token) {
+    if (!token && AppState.get('refreshToken')) {
+      try {
+        await api.refreshSession();
+      } catch (e) {
+        AppState.clearToken();
+      }
+    }
+
+    if (!AppState.get('authToken')) {
       hide();
       return false;
     }

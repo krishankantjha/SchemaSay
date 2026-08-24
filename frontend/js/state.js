@@ -137,11 +137,11 @@ const AppState = (() => {
     },
 
     /**
-     * Persist auth token
+     * Keep the short-lived access token in memory only.
+     * The refresh token is the only credential persisted for this tab.
      */
     saveToken(token) {
       this.set({ authToken: token });
-      try { sessionStorage.setItem('ss_token', token); } catch(e) {}
     },
 
     saveRefreshToken(token) {
@@ -150,16 +150,15 @@ const AppState = (() => {
     },
 
     /**
-     * Load persisted token
+     * Load the refresh token persisted for this tab.
+     * Access tokens are intentionally not restored from browser storage.
      */
     loadToken() {
       try {
-        const t = sessionStorage.getItem('ss_token');
         const r = sessionStorage.getItem('ss_refresh_token');
-        if (t) this.set({ authToken: t });
         if (r) this.set({ refreshToken: r });
-        return t;
-      } catch(e) { return null; }
+        return this.get('authToken');
+      } catch(e) { return this.get('authToken'); }
     },
 
     /**
@@ -168,7 +167,6 @@ const AppState = (() => {
     clearToken() {
       this.set({ authToken: null, refreshToken: null });
       try {
-        sessionStorage.removeItem('ss_token');
         sessionStorage.removeItem('ss_refresh_token');
       } catch(e) {}
     },
