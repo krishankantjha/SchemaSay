@@ -167,6 +167,7 @@ const AppState = (() => {
     clearToken() {
       this.set({ authToken: null, refreshToken: null });
       try {
+        sessionStorage.removeItem('ss_token');
         sessionStorage.removeItem('ss_refresh_token');
       } catch(e) {}
     },
