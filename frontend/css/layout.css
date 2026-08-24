@@ -92,15 +92,6 @@
 
 #auth-overlay.hidden { display: none; }
 
-/* ---- View Panels (content areas) ---- */
-.view-panel {
-  flex: 1;
-  padding: var(--sp-6);
-  animation: fadeInUp 200ms ease both;
-}
-
-.view-panel.hidden { display: none; }
-
 /* ---- Dashboard Layout (two-column with SQL workbench on right side) ---- */
 #view-dashboard {
   display: grid;
@@ -128,13 +119,10 @@
 }
 
 /* ---- Topbar Layout ---- */
-.topbar-left  { display: flex; align-items: center; gap: var(--sp-3); }
 .topbar-right { display: flex; align-items: center; gap: var(--sp-3); margin-left: auto; }
 
 /* ---- Grid Utilities ---- */
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-4); }
-.grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--sp-4); }
-.grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--sp-4); }
 
 /* ---- Animations ---- */
 @keyframes fadeInUp {

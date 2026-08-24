@@ -401,16 +401,8 @@
 }
 .btn-danger:hover { background: #b91c1c; }
 
-/* Teal accent */
-.btn-teal {
-  background: var(--teal);
-  color: white;
-}
-.btn-teal:hover { background: #17a899; }
-
 /* Sizes */
 .btn-sm { height: 28px; padding: var(--sp-1) var(--sp-3); font-size: var(--text-xs); }
-.btn-lg { height: 40px; padding: var(--sp-3) var(--sp-5); font-size: var(--text-md); }
 .btn-icon {
   width: 34px;
   height: 34px;
@@ -476,38 +468,10 @@
 
 .form-select:focus { border-color: var(--teal); }
 
-.form-textarea {
-  width: 100%;
-  padding: var(--sp-3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: white;
-  color: var(--text-primary);
-  font-size: var(--text-sm);
-  font-family: var(--font-body);
-  resize: vertical;
-  min-height: 80px;
-  transition: border-color var(--transition-fast);
-}
-
-.form-textarea:focus { border-color: var(--teal); }
-
 .form-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: var(--sp-4);
-}
-
-.form-hint {
-  font-size: var(--text-xs);
-  color: var(--text-muted);
-  margin-top: 2px;
-}
-
-.form-error-msg {
-  font-size: var(--text-xs);
-  color: var(--error);
-  margin-top: 2px;
 }
 
 
@@ -541,67 +505,6 @@
 }
 
 .card-body { padding: var(--sp-5); }
-
-.card-footer {
-  padding: var(--sp-3) var(--sp-5);
-  border-top: 1px solid var(--border-light);
-  background: var(--ivory-200);
-  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
-}
-
-
-/* ================================================================
-   TABS
-   ================================================================ */
-
-.tabs { display: flex; align-items: center; gap: 2px; }
-
-.tab-btn {
-  padding: var(--sp-2) var(--sp-4);
-  font-size: var(--text-sm);
-  font-weight: 500;
-  color: var(--text-secondary);
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  transition: all var(--transition-fast);
-  border: none;
-  background: none;
-  position: relative;
-}
-
-.tab-btn:hover { color: var(--text-primary); background: var(--cream); }
-
-.tab-btn.active {
-  color: var(--forest-700);
-  background: var(--cream);
-  font-weight: 600;
-}
-
-/* Underline tab style */
-.tabs-underline {
-  display: flex;
-  align-items: center;
-  border-bottom: 1px solid var(--border);
-  gap: 0;
-  padding: 0 var(--sp-2);
-}
-
-.tabs-underline .tab-btn {
-  border-radius: 0;
-  border-bottom: 2px solid transparent;
-  padding: var(--sp-3) var(--sp-4);
-  background: none;
-  margin-bottom: -1px;
-}
-
-.tabs-underline .tab-btn.active {
-  border-bottom-color: var(--forest-700);
-  background: none;
-  color: var(--forest-700);
-}
-
-.tab-panel { display: none; }
-.tab-panel.active { display: block; }
 
 
 /* ================================================================
@@ -642,18 +545,6 @@
   background: var(--error-bg);
   color: var(--error);
   border: 1px solid var(--error-border);
-}
-
-.badge-info {
-  background: rgba(26, 174, 159, 0.10);
-  color: #0e7a71;
-  border: 1px solid rgba(26, 174, 159, 0.20);
-}
-
-.badge-neutral {
-  background: var(--cream);
-  color: var(--text-secondary);
-  border: 1px solid var(--border);
 }
 
 .badge-count {
@@ -907,7 +798,6 @@
 }
 
 .skeleton-text { height: 12px; border-radius: var(--radius-sm); }
-.skeleton-text-lg { height: 16px; }
 
 
 /* ================================================================
@@ -972,44 +862,11 @@
    STATUS INDICATOR (processing stages)
    ================================================================ */
 
-.stage-list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-2);
-  padding: var(--sp-4);
-  background: var(--ivory-200);
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--border-light);
-}
 
-.stage-item {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-3);
-  font-size: var(--text-sm);
-  color: var(--text-muted);
-  transition: color var(--transition-base);
-}
-
-.stage-item.active  { color: var(--text-primary); }
-.stage-item.done    { color: var(--success); }
-
-.stage-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--border-dark);
-  flex-shrink: 0;
-  transition: background-color var(--transition-base);
-}
-
-.stage-item.active .stage-dot  { background: var(--orange); }
-.stage-item.done .stage-dot    { background: var(--success); }
 
 /* Dark mode adjustments */
 [data-theme="dark"] .form-input,
-[data-theme="dark"] .form-select,
-[data-theme="dark"] .form-textarea {
+[data-theme="dark"] .form-select {
   background: var(--ivory-200);
   border-color: var(--border);
   color: var(--text-primary);

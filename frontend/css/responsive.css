@@ -168,7 +168,6 @@
   .user-menu-info { display: none; }
 
   /* Workspace */
-  .view-panel,
   .page-view { padding: var(--sp-4); }
 
   .dashboard-header { padding: var(--sp-4); }
@@ -177,7 +176,7 @@
   .kpi-grid { grid-template-columns: repeat(2, 1fr); gap: var(--sp-3); }
   .kpi-value { font-size: var(--text-2xl); }
 
-  .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
+  .grid-2 { grid-template-columns: 1fr; }
 
   .form-row { grid-template-columns: 1fr; }
 
@@ -208,8 +207,6 @@
   .modal { max-width: 100%; border-radius: var(--radius-xl) var(--radius-xl) 0 0; }
   .modal-backdrop { align-items: flex-end; padding: 0; }
 
-  .auth-card { border-radius: var(--radius-xl); }
-  .auth-card-header { padding: var(--sp-6) var(--sp-6) var(--sp-5); }
   .auth-card-body { padding: var(--sp-6); }
 
   .copilot-prompt-card { padding: var(--sp-3); }
