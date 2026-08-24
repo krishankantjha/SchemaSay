@@ -17,8 +17,13 @@ def _split_values(value: str) -> set[str]:
     return {item.strip().lower().rstrip(".") for item in value.split(",") if item.strip()}
 
 
+def _split_paths(value: str) -> tuple[str, ...]:
+    """Split filesystem roots without lowercasing case-sensitive path components."""
+    return tuple(item.strip() for item in value.split(",") if item.strip())
+
+
 def _sqlite_roots() -> tuple[Path, ...]:
-    configured = _split_values(settings.ALLOWED_SQLITE_ROOTS)
+    configured = _split_paths(settings.ALLOWED_SQLITE_ROOTS)
     if not configured:
         configured = {settings.SQLITE_DATA_DIR}
     return tuple(Path(item).expanduser().resolve(strict=False) for item in configured)
