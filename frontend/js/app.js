@@ -29,6 +29,8 @@ function renderView(view) {
   if (!main) return;
 
   activateNavItem(view);
+  const renderToken = (main.__viewRenderToken || 0) + 1;
+  main.__viewRenderToken = renderToken;
 
   switch (view) {
     case 'dashboard':
@@ -44,10 +46,10 @@ function renderView(view) {
       _renderSchemaPage(main);
       break;
     case 'history':
-      History.render(main);
+      History.render(main, renderToken);
       break;
     case 'insights':
-      InsightsPage.render(main);
+      InsightsPage.render(main, renderToken);
       break;
     case 'settings':
       Settings.render(main);
@@ -293,20 +295,30 @@ function _renderSchemaPage(container) {
 // ============================================================
 
 function initTopbar() {
+  const bindKeyboardActivation = (element, handler) => {
+    element?.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        handler(event);
+      }
+    });
+  };
+
   // Connection selector dropdown
   const connSelector = document.getElementById('conn-selector-trigger');
-  connSelector?.addEventListener('click', () => {
-    Dropdown.toggle('conn-selector-trigger', 'conn-dropdown-menu');
-  });
+  const toggleConnections = () => Dropdown.toggle('conn-selector-trigger', 'conn-dropdown-menu');
+  connSelector?.addEventListener('click', toggleConnections);
+  bindKeyboardActivation(connSelector, toggleConnections);
 
   // Header nav buttons
   document.getElementById('header-copilot-btn')?.addEventListener('click', () => Router.navigate('dashboard'));
   document.getElementById('header-workbench-btn')?.addEventListener('click', () => Router.navigate('workbench'));
 
   // User menu
-  document.getElementById('user-menu-trigger')?.addEventListener('click', () => {
-    Dropdown.toggle('user-menu-trigger', 'user-dropdown-menu');
-  });
+  const userMenuTrigger = document.getElementById('user-menu-trigger');
+  const toggleUserMenu = () => Dropdown.toggle('user-menu-trigger', 'user-dropdown-menu');
+  userMenuTrigger?.addEventListener('click', toggleUserMenu);
+  bindKeyboardActivation(userMenuTrigger, toggleUserMenu);
 
   // User dropdown items
   document.getElementById('user-menu-settings')?.addEventListener('click', () => {
@@ -327,22 +339,53 @@ function initTopbar() {
 
 function initSidebar() {
   // Nav items
+  const closeMobileSidebar = () => {
+    document.getElementById('sidebar')?.classList.remove('mobile-open');
+    document.getElementById('sidebar-overlay')?.classList.remove('active');
+    document.getElementById('mobile-menu-btn')?.setAttribute('aria-expanded', 'false');
+  };
+
   document.querySelectorAll('.nav-item[data-view]').forEach(item => {
-    item.addEventListener('click', () => Router.navigate(item.dataset.view));
+    item.addEventListener('click', () => {
+      Router.navigate(item.dataset.view);
+      closeMobileSidebar();
+    });
     item.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') Router.navigate(item.dataset.view);
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        Router.navigate(item.dataset.view);
+        closeMobileSidebar();
+      }
     });
   });
 
   // Theme toggle
   const themeToggle = document.getElementById('theme-toggle');
-  themeToggle?.addEventListener('click', () => {
+  const toggleTheme = () => {
     ThemeManager.toggle();
     const isDark = AppState.get('theme') === 'dark';
-    themeToggle.classList.toggle('active', isDark);
+    themeToggle?.classList.toggle('active', isDark);
+    themeToggle?.setAttribute('aria-checked', String(isDark));
 
     // Update Charts
     setTimeout(() => Charts.refreshTheme(), 100);
+  };
+  themeToggle?.addEventListener('click', toggleTheme);
+  themeToggle?.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      toggleTheme();
+    }
+  });
+
+  const sidebarUser = document.getElementById('sidebar-user-btn');
+  const openSettings = () => Router.navigate('settings');
+  sidebarUser?.addEventListener('click', openSettings);
+  sidebarUser?.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      openSettings();
+    }
   });
 
   // Mobile hamburger
@@ -350,15 +393,17 @@ function initSidebar() {
   const sidebar = document.getElementById('sidebar');
   const overlay = document.getElementById('sidebar-overlay');
 
+  mobileMenuBtn?.setAttribute('aria-expanded', 'false');
+  mobileMenuBtn?.setAttribute('aria-controls', 'sidebar');
   mobileMenuBtn?.addEventListener('click', () => {
-    sidebar?.classList.toggle('mobile-open');
-    overlay?.classList.toggle('active');
+    const isOpen = !sidebar?.classList.contains('mobile-open');
+    sidebar?.classList.toggle('mobile-open', isOpen);
+    overlay?.classList.toggle('active', isOpen);
+    mobileMenuBtn.setAttribute('aria-expanded', String(isOpen));
+    mobileMenuBtn.setAttribute('aria-label', isOpen ? 'Close navigation menu' : 'Open navigation menu');
   });
 
-  overlay?.addEventListener('click', () => {
-    sidebar?.classList.remove('mobile-open');
-    overlay?.classList.remove('active');
-  });
+  overlay?.addEventListener('click', closeMobileSidebar);
 
   // Schema refresh (right panel)
   document.getElementById('schema-refresh-btn')?.addEventListener('click', () => {
