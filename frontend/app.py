@@ -38,6 +38,21 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
+def _runtime_secret(name, default=""):
+    """Read a Streamlit root secret or environment variable without exposing its value."""
+    value = os.getenv(name)
+    if value is not None and value.strip():
+        return value.strip()
+
+    try:
+        secret_value = st.secrets.get(name)
+    except (FileNotFoundError, AttributeError):
+        secret_value = None
+    if secret_value is None:
+        return default
+    return str(secret_value).strip() or default
+
+
 def get_bundled_html():
     """Reads index.html and inlines local CSS/JS files so relative assets work inside Streamlit iframe."""
     base_dir = pathlib.Path(__file__).parent.resolve()
@@ -47,9 +62,16 @@ def get_bundled_html():
         return "<h1>Error: index.html not found</h1>"
 
     html_content = index_path.read_text(encoding="utf-8")
-    demo_mode = os.getenv("SCHEMASAY_DEMO_MODE", "false").strip().lower() == "true"
-    environment = os.getenv("SCHEMASAY_ENV", "development").strip().lower()
-    api_base_url = os.getenv("SCHEMASAY_API_BASE_URL", "http://localhost:8000/api/v1").strip().rstrip("/")
+    demo_mode = _runtime_secret("SCHEMASAY_DEMO_MODE", "false").lower() == "true"
+    environment = _runtime_secret("SCHEMASAY_ENV", "development").lower()
+    api_base_url = _runtime_secret("SCHEMASAY_API_BASE_URL")
+    if not api_base_url:
+        legacy_backend_url = _runtime_secret("BACKEND_URL")
+        if legacy_backend_url:
+            api_base_url = f"{legacy_backend_url.rstrip('/')}/api/v1"
+        else:
+            api_base_url = "http://localhost:8000/api/v1"
+    api_base_url = api_base_url.rstrip("/")
     parsed_api_url = urlparse(api_base_url)
     if parsed_api_url.scheme not in {"http", "https"} or not parsed_api_url.netloc:
         raise RuntimeError("SCHEMASAY_API_BASE_URL must be an absolute HTTP or HTTPS URL")
