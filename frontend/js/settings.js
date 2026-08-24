@@ -4,19 +4,114 @@
 
 const InsightsPage = (() => {
 
-  function render(container) {
-    if (!DEMO_MODE) {
+  async function _renderLive(container, renderToken) {
+    const isCurrentView = () => container.__viewRenderToken === renderToken;
+    container.innerHTML = `
+      <div class="page-view">
+        <div class="page-header">
+          <h1 class="page-title">Data Insights</h1>
+          <p class="page-subtitle">A live view of your SchemaSay query activity.</p>
+        </div>
+        <div class="state-loading" style="padding:32px;">
+          <span class="spinner"></span>
+          <span>Loading query activity...</span>
+        </div>
+      </div>`;
+
+    try {
+      const history = await api.getQueryHistory(1, 50);
+      if (!isCurrentView()) return;
+      const entries = Array.isArray(history) ? history : [];
+      const successful = entries.filter(entry => entry.status === 'success');
+      const failed = entries.filter(entry => entry.status === 'failed');
+      const durations = entries.map(entry => Number(entry.execution_duration_ms)).filter(Number.isFinite);
+      const averageDuration = durations.length
+        ? durations.reduce((total, value) => total + value, 0) / durations.length
+        : 0;
+      const dailyCounts = {};
+      entries.forEach(entry => {
+        const day = entry.created_at ? new Date(entry.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : 'Unknown';
+        dailyCounts[day] = (dailyCounts[day] || 0) + 1;
+      });
+      const activityLabels = Object.keys(dailyCounts).slice(-14);
+      const activityValues = activityLabels.map(day => dailyCounts[day]);
+
+      if (entries.length === 0) {
+        container.innerHTML = `
+          <div class="page-view">
+            <div class="page-header">
+              <h1 class="page-title">Data Insights</h1>
+              <p class="page-subtitle">A live view of your SchemaSay query activity.</p>
+            </div>
+            <div class="state-empty">
+              <svg class="state-empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 19V5M4 19h16M8 16v-5M12 16V8M16 16v-3"/></svg>
+              <p class="state-empty-title">No query activity yet</p>
+              <p class="state-empty-desc">Run a query in Copilot or SQL Workbench to start building your live activity summary.</p>
+              <div style="display:flex;gap:8px;justify-content:center;margin-top:16px;">
+                <button class="btn btn-primary btn-sm" data-insights-route="dashboard">Open Copilot</button>
+                <button class="btn btn-secondary btn-sm" data-insights-route="workbench">Open Workbench</button>
+              </div>
+            </div>
+          </div>`;
+        container.querySelectorAll('[data-insights-route]').forEach(button => {
+          button.addEventListener('click', () => Router.navigate(button.dataset.insightsRoute));
+        });
+        return;
+      }
+
       container.innerHTML = `
         <div class="page-view">
           <div class="page-header">
             <h1 class="page-title">Data Insights</h1>
-            <p class="page-subtitle">Run a query to populate insights from your connected database.</p>
+            <p class="page-subtitle">A live view of your SchemaSay query activity.</p>
           </div>
-          <div class="state-empty">
-            <p class="state-empty-title">No live overview data yet</p>
-            <p class="state-empty-desc">The overview dashboard is populated from query results and is not seeded with demo data in production.</p>
+          <div class="kpi-grid">
+            <div class="kpi-card"><div class="kpi-label">Total Queries</div><div class="kpi-value">${DOM.formatNumber(entries.length)}</div><div class="kpi-change">Loaded from query history</div></div>
+            <div class="kpi-card"><div class="kpi-label">Successful</div><div class="kpi-value">${DOM.formatNumber(successful.length)}</div><div class="kpi-change positive">${Math.round((successful.length / entries.length) * 100)}% success rate</div></div>
+            <div class="kpi-card"><div class="kpi-label">Failed</div><div class="kpi-value">${DOM.formatNumber(failed.length)}</div><div class="kpi-change ${failed.length ? 'negative' : 'positive'}">${failed.length ? 'Needs attention' : 'No failures recorded'}</div></div>
+            <div class="kpi-card"><div class="kpi-label">Average Duration</div><div class="kpi-value">${DOM.formatDuration(averageDuration)}</div><div class="kpi-change">Across loaded queries</div></div>
+          </div>
+          <div class="insights-charts-grid">
+            <div class="insights-chart-card">
+              <div class="insights-chart-header"><div class="insights-chart-title">Query Activity</div></div>
+              <div class="insights-chart-body"><canvas id="insights-activity-chart" aria-label="Query activity over time"></canvas></div>
+            </div>
+            <div class="insights-chart-card">
+              <div class="insights-chart-header"><div class="insights-chart-title">Query Outcomes</div></div>
+              <div class="insights-chart-body"><canvas id="insights-outcome-chart" aria-label="Successful and failed queries"></canvas></div>
+            </div>
+          </div>
+          <div class="card" style="margin-top:24px;">
+            <div class="card-header"><span class="card-title">Recent activity</span><button class="btn btn-ghost btn-sm" data-insights-route="history">View history</button></div>
+            <div class="card-body" style="padding:0;">
+              ${entries.slice(0, 5).map(entry => `
+                <div class="activity-row">
+                  <span class="activity-status ${entry.status === 'success' ? 'success' : 'failed'}"></span>
+                  <span class="activity-question">${DOM.escape(entry.question || 'Direct SQL query')}</span>
+                  <span class="activity-meta">${DOM.escape(entry.connection_name || '—')} · ${DOM.formatDate(entry.created_at)}</span>
+                </div>`).join('')}
+            </div>
           </div>
         </div>`;
+
+      Charts.render('insights-activity-chart', 'line', activityLabels, activityValues, 'Queries', 'Query Activity');
+      Charts.render('insights-outcome-chart', 'doughnut', ['Successful', 'Failed'], [successful.length, failed.length], 'Queries', 'Query Outcomes');
+      container.querySelectorAll('[data-insights-route]').forEach(button => {
+        button.addEventListener('click', () => Router.navigate(button.dataset.insightsRoute));
+      });
+    } catch (err) {
+      if (!isCurrentView()) return;
+      container.innerHTML = `
+        <div class="page-view">
+          <div class="page-header"><h1 class="page-title">Data Insights</h1><p class="page-subtitle">A live view of your SchemaSay query activity.</p></div>
+          <div class="state-error" role="alert">Unable to load query activity. ${DOM.escape(err.message)}</div>
+        </div>`;
+    }
+  }
+
+  function render(container, renderToken) {
+    if (!DEMO_MODE) {
+      _renderLive(container, renderToken);
       return;
     }
     const kpis = DEMO.kpis;
@@ -351,7 +446,7 @@ const Settings = (() => {
                   <div class="settings-row-desc">${DOM.escape(user.email || 'Not logged in')}</div>
                 </div>
               </div>
-              <button class="btn btn-secondary btn-sm" onclick="Toast.info('Profile editing coming soon.')">Edit Profile</button>
+              <span class="settings-readonly">Account details are managed securely</span>
             </div>
           </div>
         </div>
@@ -386,18 +481,14 @@ const Settings = (() => {
                 <div class="settings-row-label">LLM Provider</div>
                 <div class="settings-row-desc">Configure which AI model generates your SQL.</div>
               </div>
-              <select class="form-select" style="width:180px;" onchange="Toast.info('LLM preference saved.')">
-                <option value="gemini">Gemini Flash 1.5</option>
-                <option value="openai">OpenAI GPT-4o Mini</option>
-                <option value="heuristic">Offline (Heuristic)</option>
-              </select>
+              <span class="settings-readonly">Managed by server configuration</span>
             </div>
             <div class="settings-row">
               <div class="settings-row-info">
                 <div class="settings-row-label">Gemini API Key</div>
                 <div class="settings-row-desc">Set in the .env file on the backend server.</div>
               </div>
-              <input class="form-input" style="width:240px;font-family:var(--font-mono);" type="password" placeholder="sk-••••••••••••••" readonly>
+              <span class="settings-readonly">API keys are never stored in the browser</span>
             </div>
           </div>
         </div>
