@@ -186,6 +186,11 @@
 
   .history-card-header { flex-direction: column; gap: var(--sp-3); }
   .history-actions { width: 100%; justify-content: flex-end; }
+  .activity-row { align-items: flex-start; }
+  .activity-question { white-space: normal; }
+  .activity-meta { max-width: 42%; white-space: normal; text-align: right; }
+  .settings-row { align-items: flex-start; flex-direction: column; gap: var(--sp-3); }
+  .settings-readonly { text-align: left; }
 
   .data-table-wrap { font-size: var(--text-xs); }
   .data-table th, .data-table td { padding: var(--sp-2) var(--sp-3); }
@@ -216,6 +221,10 @@
 /* Mobile-only elements hidden on desktop */
 #mobile-menu-btn { display: none; }
 #sidebar-overlay { display: none; }
+
+@media (max-width: 640px) {
+  #mobile-menu-btn { display: flex; }
+}
 
 /* Print styles */
 @media print {
