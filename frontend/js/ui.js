@@ -81,33 +81,76 @@ const Toast = (() => {
 // MODAL SYSTEM
 // ============================================================
 
-const Modal = {
-  open(modalId) {
-    const backdrop = document.getElementById(modalId);
-    if (backdrop) {
-      backdrop.classList.remove('hidden');
-      document.body.style.overflow = 'hidden';
-      // Focus first focusable element
-      const focusable = backdrop.querySelector('button, input, select, textarea, [tabindex]');
-      if (focusable) setTimeout(() => focusable.focus(), 50);
-    }
-  },
+const Modal = (() => {
+  let activeModalId = null;
+  let restoreFocus = null;
+  const focusableSelector = 'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])';
 
-  close(modalId) {
+  function open(modalId) {
     const backdrop = document.getElementById(modalId);
-    if (backdrop) {
-      backdrop.classList.add('hidden');
-      document.body.style.overflow = '';
-    }
-  },
+    if (!backdrop) return;
+    restoreFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    activeModalId = modalId;
+    backdrop.classList.remove('hidden');
+    backdrop.setAttribute('aria-hidden', 'false');
+    if (!backdrop.hasAttribute('role')) backdrop.setAttribute('role', 'dialog');
+    document.body.style.overflow = 'hidden';
+    const focusable = backdrop.querySelector(focusableSelector);
+    if (focusable) setTimeout(() => focusable.focus(), 50);
+  }
 
-  closeAll() {
+  function close(modalId) {
+    const backdrop = document.getElementById(modalId);
+    if (!backdrop) return;
+    backdrop.classList.add('hidden');
+    backdrop.setAttribute('aria-hidden', 'true');
+    document.body.style.overflow = '';
+    if (activeModalId === modalId) {
+      activeModalId = null;
+      const target = restoreFocus;
+      restoreFocus = null;
+      if (target && document.contains(target)) setTimeout(() => target.focus(), 0);
+    }
+  }
+
+  function closeAll() {
+    const current = activeModalId;
     document.querySelectorAll('.modal-backdrop').forEach(el => {
       el.classList.add('hidden');
+      el.setAttribute('aria-hidden', 'true');
     });
     document.body.style.overflow = '';
-  },
-};
+    activeModalId = null;
+    const target = restoreFocus;
+    restoreFocus = null;
+    if (target && document.contains(target)) setTimeout(() => target.focus(), 0);
+    return current;
+  }
+
+  document.addEventListener('keydown', (event) => {
+    if (!activeModalId) return;
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      close(activeModalId);
+      return;
+    }
+    if (event.key !== 'Tab') return;
+    const modal = document.getElementById(activeModalId);
+    const focusable = modal ? Array.from(modal.querySelectorAll(focusableSelector)) : [];
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  });
+
+  return { open, close, closeAll };
+})();
 
 // Close modal on backdrop click
 document.addEventListener('click', (e) => {
@@ -126,37 +169,55 @@ document.addEventListener('keydown', (e) => {
 // DROPDOWN SYSTEM
 // ============================================================
 
-const Dropdown = {
-  open(triggerId, menuId) {
+const Dropdown = (() => {
+  const outsideHandlers = new Map();
+  const triggerByMenu = new Map();
+
+  function open(triggerId, menuId) {
     const menu = document.getElementById(menuId);
+    const trigger = document.getElementById(triggerId);
+    if (!menu) return;
+    const previousHandler = outsideHandlers.get(menuId);
+    if (previousHandler) document.removeEventListener('click', previousHandler);
+    triggerByMenu.set(menuId, triggerId);
+    menu.classList.remove('hidden');
+    menu.setAttribute('aria-hidden', 'false');
+    trigger?.setAttribute('aria-expanded', 'true');
+    const handler = (event) => {
+      if (!menu.contains(event.target) && !trigger?.contains(event.target)) close(menuId);
+    };
+    outsideHandlers.set(menuId, handler);
+    setTimeout(() => document.addEventListener('click', handler), 0);
+  }
+
+  function close(menuId, restore = false) {
+    const menu = document.getElementById(menuId);
+    const triggerId = triggerByMenu.get(menuId);
+    const trigger = triggerId ? document.getElementById(triggerId) : null;
+    const handler = outsideHandlers.get(menuId);
+    if (handler) document.removeEventListener('click', handler);
+    outsideHandlers.delete(menuId);
     if (menu) {
-      menu.classList.remove('hidden');
-      // Auto-close when clicking outside
-      const handler = (e) => {
-        const trigger = document.getElementById(triggerId);
-        if (!menu.contains(e.target) && !trigger?.contains(e.target)) {
-          this.close(menuId);
-          document.removeEventListener('click', handler);
-        }
-      };
-      setTimeout(() => document.addEventListener('click', handler), 0);
+      menu.classList.add('hidden');
+      menu.setAttribute('aria-hidden', 'true');
     }
-  },
+    trigger?.setAttribute('aria-expanded', 'false');
+    if (restore && trigger) trigger.focus();
+  }
 
-  close(menuId) {
+  function toggle(triggerId, menuId) {
     const menu = document.getElementById(menuId);
-    if (menu) menu.classList.add('hidden');
-  },
+    if (menu?.classList.contains('hidden')) open(triggerId, menuId);
+    else close(menuId);
+  }
 
-  toggle(triggerId, menuId) {
-    const menu = document.getElementById(menuId);
-    if (menu?.classList.contains('hidden')) {
-      this.open(triggerId, menuId);
-    } else {
-      this.close(menuId);
-    }
-  },
-};
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape') return;
+    for (const menuId of outsideHandlers.keys()) close(menuId, true);
+  });
+
+  return { open, close, toggle };
+})();
 
 
 // ============================================================
