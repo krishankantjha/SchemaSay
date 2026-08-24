@@ -313,14 +313,7 @@ const Copilot = (() => {
     try {
       const data = await api.executeQuery(conn.id, sql);
 
-      const results = {
-        columns: data.columns || (data.rows?.[0] ? Object.keys(data.rows[0]) : []),
-        rows: data.rows || [],
-        rowCount: data.row_count ?? data.rows?.length ?? 0,
-        executionTime: (data.execution_time_ms || 0) / 1000,
-        chartConfig: data.chart_config,
-        truncated: data.truncated === true,
-      };
+      const results = api.toQueryResult(data);
 
       AppState.set({ queryResult: results, currentQuery: 'Manual SQL Editor Query', currentSql: sql });
 

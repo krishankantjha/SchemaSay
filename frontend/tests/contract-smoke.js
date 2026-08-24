@@ -70,6 +70,29 @@ async function testApiNormalization() {
   assert.deepStrictEqual(JSON.parse(JSON.stringify(schema)), {
     tables: [{ name: 'orders', columns: [{ name: 'id', type: 'integer' }, { name: 'total', type: 'numeric' }] }],
   });
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(api.toQueryResult({
+    columns: ['id'],
+    rows: [{ id: 7 }],
+    row_count: 1,
+    execution_time_ms: 125,
+    truncated: true,
+    chart_config: { chart_type: 'table' },
+  }))), {
+    columns: ['id'],
+    rows: [{ id: 7 }],
+    rowCount: 1,
+    executionTime: 0.125,
+    chartConfig: { chart_type: 'table' },
+    truncated: true,
+  });
+}
+
+function testCleanupArtifacts() {
+  assert.strictEqual(fs.existsSync(path.join(root, 'frontend/css/auth.css')), false, 'empty auth stylesheet should be removed');
+  const frontendRequirements = fs.readFileSync(path.join(root, 'frontend/requirements.txt'), 'utf8');
+  assert.doesNotMatch(frontendRequirements, /(?:openpyxl|xlrd)/, 'frontend should not install backend-only spreadsheet parsers');
+  assert.strictEqual(fs.existsSync(path.join(root, 'backend/requirements.lock')), false, 'stale backend lockfile should be removed');
+  assert.strictEqual(fs.existsSync(path.join(root, 'backend/app/utils/seed_demo.py')), false, 'obsolete demo seeder should be removed');
 }
 
 function testRuntimeConfiguration() {
@@ -93,5 +116,6 @@ function testRuntimeConfiguration() {
   testStateTokenStorage();
   await testApiNormalization();
   testRuntimeConfiguration();
+  testCleanupArtifacts();
   console.log('Frontend contract smoke tests passed');
 })();

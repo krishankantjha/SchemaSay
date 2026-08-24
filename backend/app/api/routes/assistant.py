@@ -10,6 +10,7 @@ from app.api.routes.auth import get_current_user
 from app.core.ai.query_generator import generate_sql_from_question
 from app.core.ai.executor import execute_assistant_query
 from app.core.visualization.chart_service import select_chart_type, ChartConfig
+from app.core.execution.error_mapping import raise_query_error
 from app.utils.rate_limiter import query_limiter
 
 router = APIRouter(prefix="/assistant", tags=["AI Copilot & SQL Workbench"])
@@ -115,29 +116,7 @@ def query_database_with_assistant(
     success, error_or_sql, results, duration_ms = assistant_result
 
     if not success:
-        # Map safety gate violations to 400 Bad Request
-        if "Access Denied" in error_or_sql or "SQL Syntax Error" in error_or_sql:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=error_or_sql
-            )
-        # Map database cancellations/timeouts to 408 Request Timeout
-        if "timeout" in error_or_sql.lower() or "cancelled" in error_or_sql.lower():
-            raise HTTPException(
-                status_code=status.HTTP_408_REQUEST_TIMEOUT,
-                detail=error_or_sql
-            )
-        # Map user schema errors or SQL syntax invalid execution queries to 422 Unprocessable Content
-        if "Database Error" in error_or_sql or "syntax error" in error_or_sql.lower():
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail=error_or_sql
-            )
-        # Map general database execution failures to 502 Bad Gateway
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=error_or_sql
-        )
+        raise_query_error(error_or_sql, include_safety_errors=True)
 
     rows = results or []
     columns = list(rows[0].keys()) if rows else []
@@ -182,29 +161,7 @@ def execute_raw_sql_query(
     success, error_or_sql, results, duration_ms = assistant_result
 
     if not success:
-        # Map safety gate violations to 400 Bad Request
-        if "Access Denied" in error_or_sql or "SQL Syntax Error" in error_or_sql:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=error_or_sql
-            )
-        # Map database cancellations/timeouts to 408 Request Timeout
-        if "timeout" in error_or_sql.lower() or "cancelled" in error_or_sql.lower():
-            raise HTTPException(
-                status_code=status.HTTP_408_REQUEST_TIMEOUT,
-                detail=error_or_sql
-            )
-        # Map user schema errors or SQL syntax invalid execution queries to 422 Unprocessable Content
-        if "Database Error" in error_or_sql or "syntax error" in error_or_sql.lower():
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail=error_or_sql
-            )
-        # Map general database execution failures to 502 Bad Gateway
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=error_or_sql
-        )
+        raise_query_error(error_or_sql, include_safety_errors=True)
 
     rows = results or []
     columns = list(rows[0].keys()) if rows else []

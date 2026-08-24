@@ -255,6 +255,18 @@ function _normalizeDirectQueryResponse(payload) {
   };
 }
 
+function _toQueryResult(payload) {
+  const data = _normalizeDirectQueryResponse(payload);
+  return {
+    columns: data.columns,
+    rows: data.rows,
+    rowCount: data.row_count,
+    executionTime: data.execution_time_ms / 1000,
+    chartConfig: data.chart_config,
+    truncated: data.truncated,
+  };
+}
+
 function _normalizeInsightsResponse(payload) {
   const insights = Array.isArray(payload?.insights)
     ? payload.insights
@@ -483,6 +495,10 @@ const api = {
       body: JSON.stringify({ connection_id: connectionId, sql_query: sqlQuery }),
     });
     return _normalizeDirectQueryResponse(data);
+  },
+
+  toQueryResult(payload) {
+    return _toQueryResult(payload);
   },
 
   async formatQuery(sqlQuery) {

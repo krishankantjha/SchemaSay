@@ -18,6 +18,7 @@ from app.core.execution.sql_wrapper import wrap_query_with_limit
 from app.core.security.sql_validator import validate_sql_structure
 from app.core.audit.audit_service import log_audit_transaction
 from app.core.visualization.chart_service import select_chart_type, ChartConfig
+from app.core.execution.error_mapping import raise_query_error
 from app.utils.rate_limiter import query_limiter
 
 router = APIRouter(prefix="/query", tags=["SQL Execution Engine"])
@@ -104,21 +105,7 @@ async def execute_raw_query(
             error_message=result.error_message,
             db=db
         )
-        # Raise semantic status responses based on failures
-        if "timeout" in result.error_message.lower() or "cancelled" in result.error_message.lower():
-            raise HTTPException(
-                status_code=status.HTTP_408_REQUEST_TIMEOUT,
-                detail=result.error_message
-            )
-        if "Database Error" in result.error_message or "syntax error" in result.error_message.lower():
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail=result.error_message
-            )
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=result.error_message
-        )
+        raise_query_error(result.error_message)
 
     # Save audit logs tracking success
     log_audit_transaction(
