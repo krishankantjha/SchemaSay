@@ -13,8 +13,8 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;450;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 
   <!-- CodeMirror 5 -->
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/scroll/simplescrollbars.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css" integrity="sha384-zaeBlB/vwYsDRSlFajnDd7OydJ0cWk+c2OWybl3eSUf6hW2EbhlCsQPqKr3gkznT" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/scroll/simplescrollbars.min.css" integrity="sha384-1s3rrcDDmKruL6JnGgSRJTcYiugjEdSSPGZAcnaywwM5wzu8ZAUHI8NQSUiu1tk+" crossorigin="anonymous">
   <style>
     /* Inline CodeMirror active line / dracula supplement */
     .CodeMirror-activeline-background { background: rgba(26,174,159,0.06) !important; }
@@ -37,7 +37,7 @@
   </style>
 
   <!-- Chart.js -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js" integrity="sha384-e6nUZLBkQ86NJ6TVVKAeSaK8jWa3NhkYWZFomE39AvDbQWeie9PlQqM3pmYW5d1g" crossorigin="anonymous"></script>
 
   <!-- SchemaSay CSS -->
   <link rel="stylesheet" href="css/variables.css">
@@ -324,7 +324,7 @@
 
     <!-- Connection Selector -->
     <div class="dropdown-wrapper">
-      <div class="connection-selector" id="conn-selector-trigger" role="button" tabindex="0" aria-haspopup="listbox" aria-label="Select active database connection">
+      <div class="connection-selector" id="conn-selector-trigger" role="button" tabindex="0" aria-haspopup="listbox" aria-expanded="false" aria-label="Select active database connection">
         <span class="connection-indicator" id="active-conn-dot"></span>
         <div class="connection-meta">
           <span class="connection-meta-label">Active Connection</span>
@@ -332,7 +332,7 @@
         </div>
         <svg class="connection-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
       </div>
-      <div class="dropdown-menu hidden" id="conn-dropdown-menu" role="listbox" aria-label="Database connections">
+      <div class="dropdown-menu hidden" id="conn-dropdown-menu" role="listbox" aria-label="Database connections" aria-hidden="true">
         <div class="dropdown-header">Connections</div>
         <div id="conn-dropdown-list"></div>
         <div class="dropdown-divider"></div>
@@ -359,7 +359,7 @@
 
       <!-- User Menu -->
       <div class="dropdown-wrapper">
-        <div class="user-menu-trigger" id="user-menu-trigger" role="button" tabindex="0" aria-haspopup="menu" aria-label="User menu">
+        <div class="user-menu-trigger" id="user-menu-trigger" role="button" tabindex="0" aria-haspopup="menu" aria-expanded="false" aria-label="User menu">
           <div class="user-avatar" id="topbar-user-avatar" aria-hidden="true">JD</div>
           <div class="user-menu-info">
             <div class="user-menu-name" id="topbar-user-name">John Doe</div>
@@ -367,7 +367,7 @@
           </div>
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
         </div>
-        <div class="dropdown-menu align-right hidden" id="user-dropdown-menu" role="menu">
+        <div class="dropdown-menu align-right hidden" id="user-dropdown-menu" role="menu" aria-hidden="true">
           <div class="dropdown-header" id="user-dropdown-name">John Doe</div>
           <button class="dropdown-item" id="user-menu-settings" role="menuitem">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v3m0 16v3m-8.66-14.5l2.6 1.5m10.12 5.82l2.6 1.5M1 12h3m16 0h3M3.34 7.5l2.6-1.5M17.46 17.32l2.6-1.5"/></svg>
@@ -461,7 +461,7 @@
      =================================================================== -->
 
 <!-- Add Connection Modal -->
-<div class="modal-backdrop hidden" id="add-connection-modal" role="dialog" aria-modal="true" aria-labelledby="add-conn-modal-title">
+<div class="modal-backdrop hidden" id="add-connection-modal" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="add-conn-modal-title">
   <div class="modal modal-lg">
     <div class="modal-header">
       <h2 class="modal-title" id="add-conn-modal-title">Add Database Connection</h2>
@@ -524,7 +524,7 @@
 </div>
 
 <!-- Upload File Modal -->
-<div class="modal-backdrop hidden" id="upload-file-modal" role="dialog" aria-modal="true" aria-labelledby="upload-modal-title">
+<div class="modal-backdrop hidden" id="upload-file-modal" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="upload-modal-title">
   <div class="modal">
     <div class="modal-header">
       <h2 class="modal-title" id="upload-modal-title">Upload Spreadsheet</h2>
@@ -573,10 +573,10 @@
      =================================================================== -->
 
 <!-- CodeMirror 5 core + SQL mode -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/sql/sql.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/matchbrackets.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/selection/active-line.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js" integrity="sha384-ZYmwuq4n2gOcNxMSiJ6jyTj+BbIrilr7p6dlq6q5nmSWKmsH9UU4K1qqjycMkfmR" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/sql/sql.min.js" integrity="sha384-HxXmA1hLc56V6Ja4yfcCwAprmbnS4tuvKYS0qKG3t6oxOFMflcnYq5fOnt6wVCda" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/matchbrackets.min.js" integrity="sha384-LjCI3E8qhhxXZvu7+FCvqx9eZYSowFvuJ7z54KsgI/BDPGKEuysqCg/vYiKHvC4Y" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/selection/active-line.min.js" integrity="sha384-hcxaXyAtJ30s2NeDu1OHWsQRiHiWuYLTbI596+YFb+f2pFhzO0mDuahZziRPPDxg" crossorigin="anonymous"></script>
 
 <!-- App Modules -->
 <script src="js/state.js"></script>

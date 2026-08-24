@@ -7,6 +7,7 @@ import json
 import os
 import re
 import pathlib
+from urllib.parse import urlparse
 import streamlit as st
 import streamlit.components.v1 as components
 
@@ -46,9 +47,19 @@ def get_bundled_html():
         return "<h1>Error: index.html not found</h1>"
 
     html_content = index_path.read_text(encoding="utf-8")
+    demo_mode = os.getenv("SCHEMASAY_DEMO_MODE", "false").strip().lower() == "true"
+    environment = os.getenv("SCHEMASAY_ENV", "development").strip().lower()
+    api_base_url = os.getenv("SCHEMASAY_API_BASE_URL", "http://localhost:8000/api/v1").strip().rstrip("/")
+    parsed_api_url = urlparse(api_base_url)
+    if parsed_api_url.scheme not in {"http", "https"} or not parsed_api_url.netloc:
+        raise RuntimeError("SCHEMASAY_API_BASE_URL must be an absolute HTTP or HTTPS URL")
+    if environment == "production" and parsed_api_url.scheme != "https":
+        raise RuntimeError("SCHEMASAY_API_BASE_URL must use HTTPS in production")
+
     config = {
-        "demoMode": os.getenv("SCHEMASAY_DEMO_MODE", "false").strip().lower() == "true",
-        "apiBaseUrl": os.getenv("SCHEMASAY_API_BASE_URL", "http://localhost:8000/api/v1"),
+        "demoMode": demo_mode,
+        "apiBaseUrl": api_base_url,
+        "environment": environment,
     }
     config_script = f"<script>window.SCHEMASAY_CONFIG = {json.dumps(config)};</script>"
     html_content = html_content.replace("</head>", f"{config_script}</head>", 1)
