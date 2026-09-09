@@ -1,0 +1,124 @@
+:root {
+  /* ============================================================
+     Dark theme — Warm Obsidian (default)
+     ============================================================ */
+
+  /* Surfaces — slightly brighter, less void */
+  --color-bg-base: #121110;
+  --color-bg-surface: #1a1917;
+  --color-bg-elevated: #232120;
+  --color-bg-overlay: rgba(15, 14, 12, 0.78);
+
+  /* Borders */
+  --color-border-subtle: #2a2826;
+  --color-border-default: #363432;
+  --color-border-focus: #2dd4bf;
+
+  /* Text */
+  --color-text-primary: #f5f2ed;
+  --color-text-secondary: #a8a29e;
+  --color-text-muted: #78716c;
+  --color-text-inverse: #0f0e0c;
+
+  /* Brand — cyan/teal primary */
+  --color-accent: #2dd4bf;
+  --color-accent-hover: #14b8a6;
+  --color-accent-muted: rgba(45, 212, 191, 0.1);
+  --shadow-accent-glow: 0 1px 2px rgba(45, 212, 191, 0.08);
+
+  /* AI / insight accent — purple */
+  --color-ai: #a78bfa;
+  --color-ai-muted: rgba(167, 139, 250, 0.12);
+
+  /* Semantic — amber for warnings only */
+  --color-success: #4ade80;
+  --color-success-muted: rgba(74, 222, 128, 0.1);
+  --color-warning: #fbbf24;
+  --color-warning-muted: rgba(251, 191, 36, 0.1);
+  --color-danger: #f87171;
+  --color-danger-muted: rgba(248, 113, 113, 0.1);
+  --color-info: #38bdf8;
+  --color-pii: #c084fc;
+  --color-pii-muted: rgba(192, 132, 252, 0.1);
+
+  /* SQL syntax */
+  --color-sql-keyword: #67e8f9;
+  --color-sql-string: #86efac;
+  --color-sql-function: #fcd34d;
+  --color-sql-comment: #78716c;
+
+  /* Charts */
+  --color-chart-1: #2dd4bf;
+  --color-chart-2: #38bdf8;
+  --color-chart-3: #a78bfa;
+  --color-chart-4: #fbbf24;
+
+  /* Radius — standardized 8–12px */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-xl: 12px;
+
+  /* Spacing scale */
+  --space-page: 28px;
+  --space-card: 20px;
+  --space-section: 28px;
+  --control-height: 44px;
+
+  /* Shadows — subtle glass */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.12);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.15);
+  --shadow-glass: 0 1px 0 rgba(255, 255, 255, 0.04) inset;
+
+  /* Motion */
+  --duration-fast: 150ms;
+  --duration-normal: 250ms;
+  --ease-default: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ============================================================
+   Light theme — designed, not inverted
+   ============================================================ */
+:root[data-theme="light"] {
+  --color-bg-base: #faf9f7;
+  --color-bg-surface: #ffffff;
+  --color-bg-elevated: #f3f1ee;
+  --color-bg-overlay: rgba(255, 255, 255, 0.82);
+
+  --color-border-subtle: #e7e5e4;
+  --color-border-default: #d6d3d1;
+  --color-border-focus: #0d9488;
+
+  --color-text-primary: #1c1917;
+  --color-text-secondary: #57534e;
+  --color-text-muted: #a8a29e;
+  --color-text-inverse: #faf9f7;
+
+  --color-accent: #0d9488;
+  --color-accent-hover: #0f766e;
+  --color-accent-muted: rgba(13, 148, 136, 0.08);
+  --shadow-accent-glow: 0 1px 2px rgba(13, 148, 136, 0.06);
+
+  --color-ai: #7c3aed;
+  --color-ai-muted: rgba(124, 58, 237, 0.08);
+
+  --color-success: #16a34a;
+  --color-success-muted: rgba(22, 163, 74, 0.08);
+  --color-warning: #d97706;
+  --color-warning-muted: rgba(217, 119, 6, 0.08);
+  --color-danger: #dc2626;
+  --color-danger-muted: rgba(220, 38, 38, 0.08);
+  --color-info: #0284c7;
+  --color-pii: #9333ea;
+  --color-pii-muted: rgba(147, 51, 234, 0.08);
+
+  --color-sql-keyword: #0e7490;
+  --color-sql-string: #15803d;
+  --color-sql-function: #b45309;
+  --color-sql-comment: #a8a29e;
+
+  --color-chart-1: #0d9488;
+  --color-chart-2: #0284c7;
+  --color-chart-3: #7c3aed;
+  --color-chart-4: #d97706;
+}

@@ -1,0 +1,26 @@
+.sql-block {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.6;
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 12px 16px;
+  overflow-x: auto;
+}
+
+.sql-block .kw {
+  color: var(--color-sql-keyword);
+}
+
+.sql-block .str {
+  color: var(--color-sql-string);
+}
+
+.sql-block .fn {
+  color: var(--color-sql-function);
+}
+
+.sql-block .cmt {
+  color: var(--color-sql-comment);
+}
