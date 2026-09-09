@@ -1,46 +1,38 @@
 import re
-import threading
 import logging
+from dataclasses import dataclass
 from typing import List, Dict, Optional
-from openai import OpenAI
+
 from app.config import settings
+from app.core.ai.llm_client import (
+    complete_chat_with_fallback,
+    get_cached_client,
+    is_api_key_valid,
+    list_llm_clients,
+)
 
 logger = logging.getLogger("schemasay.generator")
 
-# Global OpenAI client cache with a thread lock to prevent connection leaks across concurrent requests
-_llm_clients = {}
-_client_lock = threading.Lock()
+_SIMPLE_LISTING = re.compile(
+    r"\b(show|list|display|get|see|view|fetch)\b|\b(all|every)\b",
+    re.IGNORECASE,
+)
+_AGGREGATION_QUESTION = re.compile(
+    r"\b(count|sum|average|avg|total|how many|top\s+\d+|bottom|rate|percent|compare|trend)\b",
+    re.IGNORECASE,
+)
 
-def get_cached_client(api_key: str, base_url: Optional[str] = None) -> OpenAI:
-    """
-    Retrieves a cached OpenAI client registry instance or instantiates one securely.
-    Reusable socket pools reduce latency.
-    """
-    cache_key = (api_key, base_url)
-    if cache_key in _llm_clients:
-        return _llm_clients[cache_key]
-        
-    with _client_lock:
-        if cache_key not in _llm_clients:
-            if base_url:
-                _llm_clients[cache_key] = OpenAI(api_key=api_key, base_url=base_url)
-            else:
-                _llm_clients[cache_key] = OpenAI(api_key=api_key)
-        return _llm_clients[cache_key]
 
-def is_api_key_valid(key: Optional[str]) -> bool:
-    """
-    Validates that a configured third-party API key exists and is not
-    a default placeholder string.
-    """
-    if not key:
+def _should_use_heuristic_first(question: str, schema_metadata: List[Dict]) -> bool:
+    """Use the offline compiler for straightforward listing questions."""
+    if not schema_metadata or _AGGREGATION_QUESTION.search(question):
         return False
-    sanitized = key.strip().lower()
-    placeholders = {
-        "", "none", "null", "your-openai-key-here", "your-gemini-key-here",
-        "placeholder", "your_openai_key", "your_gemini_key"
-    }
-    return sanitized not in placeholders
+    if not _SIMPLE_LISTING.search(question):
+        return False
+    q = question.lower()
+    table_names = {entry["table_name"].lower() for entry in schema_metadata}
+    return any(name in q for name in table_names)
+
 
 def sanitize_prompt_input(text: str) -> str:
     """
@@ -196,28 +188,74 @@ def heuristic_offline_compiler(question: str, db_type: str, schema_metadata: Lis
 
     return " ".join(query_parts)
 
-def generate_sql_from_question(question: str, db_type: str, schema_metadata: List[Dict]) -> str:
-    """
-    Main generator routing queries to online LLM APIs (Gemini/OpenAI) or falling back
-    to the Smart Heuristic Offline Compiler.
-    """
-    gemini_active = is_api_key_valid(settings.GEMINI_API_KEY)
-    openai_active = is_api_key_valid(settings.OPENAI_API_KEY)
 
-    # Sanitize user question to prevent prompt injection overrides
+@dataclass
+class SqlGenerationResult:
+    sql: str
+    used_llm: bool
+    provider: Optional[str] = None
+    model: Optional[str] = None
+
+
+def extract_sql(text: str) -> str:
+    """Strip markdown fences and keep the first SELECT/WITH/PRAGMA statement."""
+    if not text:
+        return ""
+    cleaned = text.replace("```sql", "").replace("```", "").strip()
+    match = re.search(r"(?is)\b(with|select|pragma)\b", cleaned)
+    if match:
+        cleaned = cleaned[match.start():]
+    return cleaned.strip().rstrip(";").strip()
+
+
+def generate_sql(
+    question: str,
+    db_type: str,
+    schema_metadata: List[Dict],
+    verified_examples: Optional[List[Dict]] = None,
+) -> SqlGenerationResult:
+    """
+    Translate a natural-language question into SQL using configured LLM providers,
+    falling back to the heuristic compiler when no provider succeeds.
+    """
     sanitized_question = sanitize_prompt_input(question)
 
-    if not gemini_active and not openai_active:
-        return heuristic_offline_compiler(sanitized_question, db_type, schema_metadata)
+    if verified_examples:
+        from app.core.learning.retrieval import pick_high_confidence_example, VerifiedExample
 
-    # Context window protection: limit schema context elements to a max of 200 items
+        examples = [
+            VerifiedExample(
+                question=item["question"],
+                sql=item["sql"],
+                similarity=item.get("similarity", 1.0),
+                source=item.get("source", "verified"),
+            )
+            for item in verified_examples
+        ]
+        direct_match = pick_high_confidence_example(sanitized_question, examples)
+        if direct_match:
+            logger.info("Using high-confidence verified example for SQL generation.")
+            return SqlGenerationResult(
+                sql=direct_match.sql,
+                used_llm=False,
+                provider="learning_example",
+            )
+
+    heuristic_sql = heuristic_offline_compiler(sanitized_question, db_type, schema_metadata)
+
+    if _should_use_heuristic_first(sanitized_question, schema_metadata):
+        logger.info("Using heuristic compiler for simple listing question.")
+        return SqlGenerationResult(sql=heuristic_sql, used_llm=False, provider="heuristic")
+
+    if not list_llm_clients():
+        return SqlGenerationResult(sql=heuristic_sql, used_llm=False, provider="heuristic")
+
     max_schema_items = 200
     is_truncated = False
     if len(schema_metadata) > max_schema_items:
         schema_metadata = schema_metadata[:max_schema_items]
         is_truncated = True
 
-    # Format schema context for the LLM
     schema_context = []
     for entry in schema_metadata:
         schema_context.append(
@@ -227,12 +265,33 @@ def generate_sql_from_question(question: str, db_type: str, schema_metadata: Lis
 
     truncation_warning = ""
     if is_truncated:
-        truncation_warning = "\nWARNING: The database schema is very large and has been truncated. Focus strictly on these tables."
+        truncation_warning = (
+            "\nWARNING: The database schema is very large and has been truncated. "
+            "Focus strictly on these tables."
+        )
+
+    examples_block = ""
+    if verified_examples:
+        from app.core.learning.retrieval import VerifiedExample, format_examples_for_prompt
+
+        examples = [
+            VerifiedExample(
+                question=item["question"],
+                sql=item["sql"],
+                similarity=item.get("similarity", 0.0),
+                source=item.get("source", "verified"),
+            )
+            for item in verified_examples
+        ]
+        formatted = format_examples_for_prompt(examples)
+        if formatted:
+            examples_block = f"\n{formatted}\n"
 
     system_prompt = (
         f"You are a SQL expert query generator. Your task is to translate natural language questions "
         f"into clean, valid {db_type} SQL select queries. You are provided with the target database schema:\n"
-        f"{schema_str}{truncation_warning}\n\n"
+        f"{schema_str}{truncation_warning}\n"
+        f"{examples_block}\n"
         f"CRITICAL INSTRUCTIONS:\n"
         f"1. Generate only a read-only SELECT statement.\n"
         f"2. Output only the raw SQL query. Do not wrap the output in markdown code blocks or add text. "
@@ -242,37 +301,35 @@ def generate_sql_from_question(question: str, db_type: str, schema_metadata: Lis
     )
 
     try:
-        if gemini_active:
-            # Instantiate/Fetch cached Gemini compatibility client
-            client = get_cached_client(
-                api_key=settings.GEMINI_API_KEY,
-                base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
-            )
-            response = client.chat.completions.create(
-                model="gemini-1.5-flash",
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": sanitized_question}
-                ],
-                temperature=0.0
-            )
-            sql = response.choices[0].message.content
-        else:
-            # Fallback to OpenAI GPT
-            client = get_cached_client(api_key=settings.OPENAI_API_KEY)
-            response = client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": sanitized_question}
-                ],
-                temperature=0.0
-            )
-            sql = response.choices[0].message.content
-
-        # Strip any markdown code block markers that the LLM may have added
-        sql = sql.replace("```sql", "").replace("```", "").strip()
-        return sql
+        completion = complete_chat_with_fallback(
+            system_prompt=system_prompt,
+            user_prompt=sanitized_question,
+            temperature=0.0,
+            timeout=settings.LLM_TIMEOUT_SECONDS,
+            max_tokens=800,
+        )
+        sql = extract_sql(completion.content)
+        if not sql:
+            raise RuntimeError("LLM returned no SQL statement.")
+        logger.info("SQL generated via %s (%s).", completion.provider, completion.model)
+        return SqlGenerationResult(
+            sql=sql,
+            used_llm=True,
+            provider=completion.provider,
+            model=completion.model,
+        )
     except Exception as e:
         logger.error(f"AI compilation failed, falling back to heuristic offline compiler: {str(e)}")
-        return heuristic_offline_compiler(sanitized_question, db_type, schema_metadata)
+        return SqlGenerationResult(sql=heuristic_sql, used_llm=False, provider="heuristic")
+
+
+def generate_sql_from_question(
+    question: str,
+    db_type: str,
+    schema_metadata: List[Dict],
+    verified_examples: Optional[List[Dict]] = None,
+) -> str:
+    """
+    Compatibility wrapper that returns only the generated SQL string.
+    """
+    return generate_sql(question, db_type, schema_metadata, verified_examples).sql

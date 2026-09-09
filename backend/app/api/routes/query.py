@@ -1,6 +1,6 @@
-import uuid
 import logging
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
+
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
@@ -12,29 +12,21 @@ from app.database import get_db
 from app.models.user import User
 from app.api.routes.auth import get_current_user
 from app.api.routes.assistant import get_user_connection_or_404
-from app.core.connections.connector import get_connection
-from app.core.execution.query_executor import execute_query
-from app.core.execution.sql_wrapper import wrap_query_with_limit
-from app.core.security.sql_validator import validate_sql_structure
-from app.core.audit.audit_service import log_audit_transaction
-from app.core.visualization.chart_service import select_chart_type, ChartConfig
+from app.core.pipeline import QueryPipeline, PipelineError
+from app.core.visualization.chart_service import ChartConfig
 from app.utils.rate_limiter import query_limiter
 
 router = APIRouter(prefix="/query", tags=["SQL Execution Engine"])
 
-# --- Pydantic Validation Schemas ---
 
 class DirectQueryRequest(BaseModel):
-    """
-    Request payload representing manual raw SQL statement input options.
-    """
+    """Request payload representing manual raw SQL statement input options."""
     connection_id: int = Field(..., gt=0)
     sql_query: str = Field(..., min_length=1, max_length=10000)
 
+
 class DirectQueryResponse(BaseModel):
-    """
-    Standardized response structure containing DataFrame rows and columns metrics.
-    """
+    """Standardized response structure containing DataFrame rows and columns metrics."""
     columns: List[str] = Field(default_factory=list)
     rows: List[Dict[str, Any]] = Field(default_factory=list)
     row_count: int
@@ -43,136 +35,83 @@ class DirectQueryResponse(BaseModel):
     query_id: str
     chart_config: ChartConfig = Field(default_factory=ChartConfig)
 
-# --- Endpoint Handlers ---
+
+def _pipeline_error_to_http(exc: PipelineError) -> HTTPException:
+    return HTTPException(status_code=exc.status_code, detail=exc.message)
+
 
 @router.post("/execute", response_model=DirectQueryResponse, status_code=status.HTTP_200_OK)
 async def execute_raw_query(
     payload: DirectQueryRequest,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
     """
-    Verifies database connection, runs query safety filter validation checks,
-    and runs the statements against the connection pool with timeout rules.
+    Executes SQL through the shared query pipeline (security, grounding,
+    governance policy, audit) before running against the target database.
     """
-    # Enforce request-scoped rate limiting to prevent Denial of Service (DoS)
     client_ip = request.client.host if request.client else "unknown"
     if query_limiter.check_rate_limit(client_ip):
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Too many query execution requests. Please wait before trying again."
+            detail="Too many query execution requests. Please wait before trying again.",
         )
 
-    # 1. Verify database ownership check to prevent IDOR leaks
     connection = get_user_connection_or_404(payload.connection_id, current_user.id, db)
-    
-    # 2. Check AST query statement security limits
-    is_safe, safety_error = validate_sql_structure(payload.sql_query)
-    if not is_safe:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=safety_error
-        )
+    pipeline = QueryPipeline(db)
 
-    # 3. Add dialect-aware hard row limitations wrapper
-    wrapped_sql = wrap_query_with_limit(payload.sql_query, connection.db_type)
-
-    # Generate query tracking UUID tracing ID
-    query_id = str(uuid.uuid4())
-    logger.info(f"[{query_id}] Initializing SQL query execution on connection ID: {connection.id}")
-
-    # 4. Execute query using connection cache pools delegated asynchronously to worker thread pool
-    engine = get_connection(connection)
-    result = await run_in_threadpool(
-        execute_query,
-        engine=engine,
-        sql_query=wrapped_sql,
-        db_type=connection.db_type
-    )
-
-    if not result.success:
-        # Save audit logs tracking failures
-        log_audit_transaction(
+    try:
+        result = await run_in_threadpool(
+            pipeline.run_raw_sql,
             user_id=current_user.id,
-            connection_id=connection.id,
+            connection=connection,
+            sql=payload.sql_query,
             question="Manual SQL Editor Query",
-            sql_query=payload.sql_query,
-            duration_ms=result.execution_time_ms,
-            status="failed",
-            error_message=result.error_message,
-            db=db
         )
-        # Raise semantic status responses based on failures
-        if "timeout" in result.error_message.lower() or "cancelled" in result.error_message.lower():
-            raise HTTPException(
-                status_code=status.HTTP_408_REQUEST_TIMEOUT,
-                detail=result.error_message
-            )
-        if "Database Error" in result.error_message or "syntax error" in result.error_message.lower():
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=result.error_message
-            )
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=result.error_message
-        )
+    except PipelineError as exc:
+        raise _pipeline_error_to_http(exc)
 
-    # Save audit logs tracking success
-    log_audit_transaction(
-        user_id=current_user.id,
-        connection_id=connection.id,
-        question="Manual SQL Editor Query",
-        sql_query=payload.sql_query,
-        duration_ms=result.execution_time_ms,
-        status="success",
-        error_message=None,
-        db=db
+    rows = result.results or []
+    columns = list(rows[0].keys()) if rows else []
+
+    logger.info(
+        "[%s] SQL query executed on connection ID: %s",
+        result.correlation_id,
+        connection.id,
     )
-
-    rows = result.rows or []
-    columns = result.columns or []
-    
-    # Compute auto-visualization layout configurations
-    chart_config = select_chart_type(columns, rows, payload.sql_query)
 
     return DirectQueryResponse(
         columns=columns,
         rows=rows,
         row_count=len(rows),
-        execution_time_ms=result.execution_time_ms,
+        execution_time_ms=result.execution_duration_ms,
         truncated=len(rows) >= 10000,
-        query_id=query_id,
-        chart_config=chart_config
+        query_id=result.correlation_id,
+        chart_config=result.chart_config,
     )
 
-# --- SQL Format routes ---
 
 class FormatQueryRequest(BaseModel):
-    """
-    Request payload containing the SQL query to beautify.
-    """
+    """Request payload containing the SQL query to beautify."""
     sql_query: str = Field(..., min_length=1, max_length=10000)
 
+
 class FormatQueryResponse(BaseModel):
-    """
-    Response payload containing the beautified SQL query.
-    """
+    """Response payload containing the beautified SQL query."""
     formatted_sql: str
+
 
 @router.post("/format", response_model=FormatQueryResponse, status_code=status.HTTP_200_OK)
 def format_query(
     payload: FormatQueryRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
-    """
-    Beautifies manual SQL statement using sqlglot.
-    """
+    """Beautifies manual SQL statement using sqlglot."""
     try:
         import sqlglot
         formatted = sqlglot.transpile(payload.sql_query, pretty=True)[0]
         return FormatQueryResponse(formatted_sql=formatted)
     except Exception as e:
-        logger.warning(f"SQL Formatting parsing error: {str(e)}. Returning original SQL.")
+        logger.warning("SQL Formatting parsing error: %s. Returning original SQL.", e)
         return FormatQueryResponse(formatted_sql=payload.sql_query)

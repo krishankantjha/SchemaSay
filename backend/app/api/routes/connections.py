@@ -9,11 +9,13 @@ logger = logging.getLogger("schemasay.connections")
 from app.database import get_db
 from app.models.user import User
 from app.models.connection import DatabaseConnection, QueryAuditLog, DatabaseSchemaCache
+from app.models.governance import ConnectionPolicy
 from app.schemas.connection import ConnectionCreate, ConnectionResponse, ConnectionTest, AuditLogResponse
+from app.schemas.governance import ConnectionPolicyResponse, ConnectionPolicyUpdate
 from app.api.routes.auth import get_current_user
 from app.core.connections.encryptor import encrypt_password
 from app.core.connections.connector import test_connection, process_file_upload, dispose_connection_engine, get_connection
-from app.core.schema.introspector import reflect_database_schema
+from app.core.schema.sync_service import sync_connection_schema_cache
 
 router = APIRouter(prefix="/connections", tags=["Database Connections"])
 
@@ -78,19 +80,17 @@ def create_connection(payload: ConnectionCreate, db: Session = Depends(get_db), 
     # Auto-sync schema cache on database connection registration
     try:
         engine = get_connection(db_connection)
-        metadata_list = reflect_database_schema(engine)
-        cache_entries = [
-            DatabaseSchemaCache(
-                connection_id=db_connection.id,
-                table_name=entry["table_name"],
-                column_name=entry["column_name"],
-                data_type=entry["data_type"]
-            )
-            for entry in metadata_list
-        ]
-        logger.info(f"Auto-sync cached {len(cache_entries)} columns for connection ID: {db_connection.id}")
-        db.bulk_save_objects(cache_entries)
-        db.commit()
+        result = sync_connection_schema_cache(
+            db=db,
+            connection=db_connection,
+            engine=engine,
+            profile=False,
+        )
+        logger.info(
+            "Auto-sync cached %s columns for connection ID: %s",
+            result["columns_synced"],
+            db_connection.id,
+        )
         dispose_connection_engine(db_connection)
     except Exception as e:
         logger.error(f"Auto-sync failed on database connection registration: {str(e)}", exc_info=True)
@@ -144,18 +144,12 @@ def upload_file_connection(
     # Auto-sync schema cache on spreadsheet file uploads ingestion
     try:
         engine = get_connection(db_connection)
-        metadata_list = reflect_database_schema(engine)
-        cache_entries = [
-            DatabaseSchemaCache(
-                connection_id=db_connection.id,
-                table_name=entry["table_name"],
-                column_name=entry["column_name"],
-                data_type=entry["data_type"]
-            )
-            for entry in metadata_list
-        ]
-        db.bulk_save_objects(cache_entries)
-        db.commit()
+        sync_connection_schema_cache(
+            db=db,
+            connection=db_connection,
+            engine=engine,
+            profile=False,
+        )
         dispose_connection_engine(db_connection)
     except Exception as e:
         logger.error(f"Auto-sync failed on file upload ingestion: {str(e)}", exc_info=True)
@@ -184,19 +178,35 @@ def delete_connection(connection_id: int, db: Session = Depends(get_db), current
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Database connection not found"
         )
-        
-    # Cleanse local disk files if connection type was a spreadsheet upload
-    if connection.db_type in ["sqlite", "file_upload"]:
-        # Dispose of connection engine to release file locks on Windows
-        dispose_connection_engine(connection)
-        if connection.db_type == "file_upload" and os.path.exists(connection.database_name):
-            try:
-                os.remove(connection.database_name)
-            except Exception:
-                pass  # Fail silently on file system cleanup
-            
-    db.delete(connection)
-    db.commit()
+
+    upload_path = connection.database_name if connection.db_type == "file_upload" else None
+
+    try:
+        if connection.db_type in ["sqlite", "file_upload"]:
+            dispose_connection_engine(connection)
+
+        # Detach audit history before delete (FK uses SET NULL on connection_id).
+        db.query(QueryAuditLog).filter(
+            QueryAuditLog.connection_id == connection_id,
+            QueryAuditLog.user_id == current_user.id,
+        ).update({QueryAuditLog.connection_id: None}, synchronize_session=False)
+
+        db.delete(connection)
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        logger.error("Failed to delete connection %s: %s", connection_id, exc, exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not remove this connection. Restart the backend and try again.",
+        ) from exc
+
+    if upload_path and os.path.exists(upload_path):
+        try:
+            os.remove(upload_path)
+        except Exception:
+            pass
+
     return {"message": "Database connection successfully deleted"}
 
 @router.get("/history", response_model=List[AuditLogResponse])
@@ -224,3 +234,81 @@ def get_query_history(
     return query.order_by(
         QueryAuditLog.created_at.desc()
     ).offset((page_val - 1) * limit_val).limit(limit_val).all()
+
+
+@router.get("/{connection_id}/policy", response_model=ConnectionPolicyResponse)
+def get_connection_policy(
+    connection_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    connection = db.query(DatabaseConnection).filter(
+        DatabaseConnection.id == connection_id,
+        DatabaseConnection.user_id == current_user.id,
+    ).first()
+    if not connection:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Database connection not found")
+
+    policy = db.query(ConnectionPolicy).filter(
+        ConnectionPolicy.connection_id == connection_id,
+        ConnectionPolicy.user_id == current_user.id,
+    ).first()
+
+    if not policy:
+        return ConnectionPolicyResponse(connection_id=connection_id)
+
+    return ConnectionPolicyResponse(
+        connection_id=connection_id,
+        blocked_tables=policy.get_blocked_tables(),
+        blocked_columns=policy.get_blocked_columns(),
+        require_high_confidence=policy.require_high_confidence,
+        min_confidence_threshold=policy.min_confidence_threshold,
+        block_pii_access=policy.block_pii_access,
+        updated_at=policy.updated_at,
+    )
+
+
+@router.put("/{connection_id}/policy", response_model=ConnectionPolicyResponse)
+def upsert_connection_policy(
+    connection_id: int,
+    payload: ConnectionPolicyUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    connection = db.query(DatabaseConnection).filter(
+        DatabaseConnection.id == connection_id,
+        DatabaseConnection.user_id == current_user.id,
+    ).first()
+    if not connection:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Database connection not found")
+
+    policy = db.query(ConnectionPolicy).filter(
+        ConnectionPolicy.connection_id == connection_id,
+        ConnectionPolicy.user_id == current_user.id,
+    ).first()
+
+    if not policy:
+        policy = ConnectionPolicy(
+            connection_id=connection_id,
+            user_id=current_user.id,
+        )
+        db.add(policy)
+
+    policy.set_blocked_tables(payload.blocked_tables)
+    policy.set_blocked_columns(payload.blocked_columns)
+    policy.require_high_confidence = payload.require_high_confidence
+    policy.min_confidence_threshold = payload.min_confidence_threshold
+    policy.block_pii_access = payload.block_pii_access
+
+    db.commit()
+    db.refresh(policy)
+
+    return ConnectionPolicyResponse(
+        connection_id=connection_id,
+        blocked_tables=policy.get_blocked_tables(),
+        blocked_columns=policy.get_blocked_columns(),
+        require_high_confidence=policy.require_high_confidence,
+        min_confidence_threshold=policy.min_confidence_threshold,
+        block_pii_access=policy.block_pii_access,
+        updated_at=policy.updated_at,
+    )

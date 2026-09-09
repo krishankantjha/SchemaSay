@@ -7,6 +7,7 @@ from app.utils.rate_limiter import query_limiter
 from app.schemas.insights import InsightRequest, InsightResponse, LLMUsageStats
 from app.core.ai.insight_summarizer import summarize_query_dataset
 from app.core.ai.insight_generator import generate_insight_with_metadata
+from app.core.ai.simple_insight import try_simple_insight
 
 logger = logging.getLogger("schemasay.insights")
 
@@ -34,20 +35,39 @@ def generate_business_insight(
     correlation_id = str(uuid.uuid4())
 
     try:
-        # Compute statistical summary metrics
+        simple = try_simple_insight(payload.question, payload.columns, payload.rows)
+        if simple is not None:
+            stats = LLMUsageStats(
+                prompt_tokens=0,
+                completion_tokens=0,
+                total_tokens=0,
+                estimated_cost_usd=0.0,
+                execution_time_ms=0.0,
+                provider=None,
+                model=None,
+            )
+            return InsightResponse(
+                insight=simple,
+                success=True,
+                error=None,
+                correlation_id=correlation_id,
+                usage_stats=stats,
+            )
+
         summary = summarize_query_dataset(payload.columns, payload.rows)
-        # Generate narrative text and capture usage stats
-        insight_text, p_tok, c_tok, cost, duration = generate_insight_with_metadata(
+        insight_text, p_tok, c_tok, cost, duration, provider, model = generate_insight_with_metadata(
             payload.question,
             summary
         )
-        
+
         stats = LLMUsageStats(
             prompt_tokens=p_tok,
             completion_tokens=c_tok,
             total_tokens=p_tok + c_tok,
             estimated_cost_usd=cost,
-            execution_time_ms=duration
+            execution_time_ms=duration,
+            provider=provider,
+            model=model,
         )
 
         return InsightResponse(

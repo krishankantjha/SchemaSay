@@ -4,12 +4,11 @@ from dataclasses import dataclass
 from typing import Tuple, List, Dict, Optional
 from sqlalchemy.orm import Session
 
-from app.models.connection import DatabaseConnection, QueryAuditLog
+from app.models.connection import DatabaseConnection
 from app.core.connections.connector import get_connection
 from app.core.execution.query_executor import execute_query
 from app.core.execution.sql_wrapper import wrap_query_with_limit
-from app.core.security.sql_validator import validate_sql_structure
-from app.core.audit.audit_service import log_audit_transaction
+from app.core.audit.audit_service import log_audit_transaction, AuditMetadata
 
 @dataclass
 class AssistantQueryResult:
@@ -28,36 +27,17 @@ def execute_assistant_query(
     connection: DatabaseConnection,
     question: str,
     raw_sql: str,
-    db: Session
+    db: Session,
+    audit_metadata: Optional[AuditMetadata] = None,
 ) -> AssistantQueryResult:
     """
-    Validates a query statement using AST-based checks, runs the query wrapped inside
-    a hard limit query wrapper, measures performance, and writes log metrics.
+    Runs a pre-validated query wrapped inside a hard limit query wrapper,
+    measures performance, and writes log metrics.
     """
-    # Step 1: Validate SQL structure using AST analysis
-    is_safe, safety_error = validate_sql_structure(raw_sql)
-    if not is_safe:
-        log_audit_transaction(
-            user_id=user_id,
-            connection_id=connection.id,
-            question=question,
-            sql_query=raw_sql,
-            duration_ms=0.0,
-            status="failed",
-            error_message=safety_error,
-            db=db
-        )
-        return AssistantQueryResult(
-            success=False,
-            error_or_sql=safety_error,
-            results=None,
-            execution_time_ms=0.0
-        )
+    metadata = audit_metadata or AuditMetadata()
 
-    # Step 2: Wrap the query with a hard row limit
     wrapped_sql = wrap_query_with_limit(raw_sql, connection.db_type)
 
-    # Step 3: Execute query against the connection pool
     start_time = time.perf_counter()
     try:
         engine = get_connection(connection)
@@ -76,7 +56,8 @@ def execute_assistant_query(
                 duration_ms=execution_duration_ms,
                 status="failed",
                 error_message=exec_error,
-                db=db
+                db=db,
+                metadata=metadata,
             )
             return AssistantQueryResult(
                 success=False,
@@ -85,7 +66,7 @@ def execute_assistant_query(
                 execution_time_ms=execution_duration_ms
             )
 
-        # Log successful query execution
+        metadata.row_count = len(results_list or [])
         log_audit_transaction(
             user_id=user_id,
             connection_id=connection.id,
@@ -94,7 +75,8 @@ def execute_assistant_query(
             duration_ms=execution_duration_ms,
             status="success",
             error_message=None,
-            db=db
+            db=db,
+            metadata=metadata,
         )
         return AssistantQueryResult(
             success=True,
@@ -116,7 +98,8 @@ def execute_assistant_query(
             duration_ms=execution_duration_ms,
             status="failed",
             error_message=error_msg,
-            db=db
+            db=db,
+            metadata=metadata,
         )
         return AssistantQueryResult(
             success=False,
@@ -124,7 +107,3 @@ def execute_assistant_query(
             results=None,
             execution_time_ms=execution_duration_ms
         )
-        
-    finally:
-        # Engine pool cleanup is handled by EngineRegistry; nothing to release here
-        pass

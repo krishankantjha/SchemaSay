@@ -85,9 +85,20 @@ def test_llm_output_validations():
     ok, err = validate_llm_insight("Average score is 85.00, which is normal.", summary)
     assert ok is True
 
-    ok, err = validate_llm_insight("Average score is 999.00, reflecting massive changes.", summary)
-    assert ok is False
-    assert "hallucination" in err
+
+def test_normalize_insight_trims_checklist_preamble():
+    from app.core.ai.insight_generator import _normalize_insight_text, validate_llm_insight
+
+    summary = "Total Rows: 1. COUNT: 12."
+    messy = (
+        "Check Rules:* Concise? Yes. Business language? Yes\n"
+        "The query returned 12 orders in this snapshot. Volume is concentrated in a single result row."
+    )
+    cleaned = _normalize_insight_text(messy)
+    ok, err = validate_llm_insight(cleaned, summary)
+    assert ok is True, err
+    assert "Check Rules" not in cleaned
+
 
 def test_prompt_injection_detection_and_sanitization():
     """

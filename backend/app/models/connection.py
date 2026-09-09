@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Boolean
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Boolean, Float, Text
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from app.database import Base
@@ -27,6 +27,9 @@ class DatabaseConnection(Base):
 
     # Establish relations with cascading deletion rules
     schemas = relationship("DatabaseSchemaCache", back_populates="connection", cascade="all, delete-orphan")
+    table_stats = relationship("SchemaTableStats", back_populates="connection", cascade="all, delete-orphan")
+    metrics = relationship("MetricDefinition", back_populates="connection", cascade="all, delete-orphan")
+    policy = relationship("ConnectionPolicy", back_populates="connection", cascade="all, delete-orphan", uselist=False)
     audit_logs = relationship("QueryAuditLog", back_populates="connection")
 
 class DatabaseSchemaCache(Base):
@@ -41,9 +44,29 @@ class DatabaseSchemaCache(Base):
     table_name = Column(String, nullable=False, index=True)
     column_name = Column(String, nullable=False)
     data_type = Column(String, nullable=False)
+    is_nullable = Column(Boolean, nullable=True)
+    null_ratio = Column(Float, nullable=True)
+    distinct_count = Column(Integer, nullable=True)
+    sample_values = Column(Text, nullable=True)
+    is_pii = Column(Boolean, nullable=False, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     connection = relationship("DatabaseConnection", back_populates="schemas")
+
+
+class SchemaTableStats(Base):
+    """
+    Cached row counts per table from optional schema profiling.
+    """
+    __tablename__ = "schema_table_stats"
+
+    id = Column(Integer, primary_key=True)
+    connection_id = Column(Integer, ForeignKey("database_connections.id", ondelete="CASCADE"), nullable=False, index=True)
+    table_name = Column(String, nullable=False, index=True)
+    row_count = Column(Integer, nullable=True)
+    last_profiled_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    connection = relationship("DatabaseConnection", back_populates="table_stats")
 
 class QueryAuditLog(Base):
     """
@@ -61,6 +84,13 @@ class QueryAuditLog(Base):
     execution_duration_ms = Column(Integer, nullable=True)
     status = Column(String, nullable=False)  # 'success' or 'failed'
     error_message = Column(String, nullable=True)
+    correlation_id = Column(String, nullable=True, index=True)
+    confidence_score = Column(Integer, nullable=True)
+    grounded = Column(Boolean, nullable=True)
+    tables_accessed_json = Column(Text, nullable=True)
+    row_count = Column(Integer, nullable=True)
+    resolution_source = Column(String, nullable=True)
+    metric_id = Column(Integer, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     connection = relationship("DatabaseConnection", back_populates="audit_logs")

@@ -5,7 +5,8 @@ from fastapi import status
 from sqlalchemy import create_engine, text
 from app.models.connection import DatabaseConnection, QueryAuditLog
 from app.core.ai.query_generator import generate_sql_from_question, heuristic_offline_compiler
-from app.core.ai.executor import execute_assistant_query, validate_sql_structure
+from app.core.ai.executor import execute_assistant_query
+from app.core.security.sql_validator import validate_sql_structure
 
 def test_heuristic_offline_compiler_rules():
     """
@@ -273,3 +274,102 @@ def test_format_sql_query(client):
     fallback_res = client.post("/api/v1/query/format", json={"sql_query": invalid_sql}, headers=headers)
     assert fallback_res.status_code == status.HTTP_200_OK
     assert fallback_res.json()["formatted_sql"] == invalid_sql
+
+
+def test_extract_sql_strips_markdown_and_prose():
+    from app.core.ai.query_generator import extract_sql
+
+    assert extract_sql("```sql\nSELECT * FROM orders;\n```") == "SELECT * FROM orders"
+    assert extract_sql("Here you go:\nSELECT id FROM users") == "SELECT id FROM users"
+
+
+def test_generate_sql_uses_llm_completion():
+    from unittest.mock import patch
+    from app.core.ai.query_generator import generate_sql
+    from app.core.ai.llm_client import LLMCompletion
+
+    schema = [{"table_name": "orders", "column_name": "id", "data_type": "INTEGER"}]
+    completion = LLMCompletion(
+        content="```sql\nSELECT COUNT(*) FROM orders;\n```",
+        prompt_tokens=10,
+        completion_tokens=5,
+        cost_usd=0.0,
+        duration_ms=12.0,
+        provider="gemini",
+        model="gemini-3.6-flash",
+    )
+    with patch("app.core.ai.query_generator.list_llm_clients", return_value=[object()]), patch(
+        "app.core.ai.query_generator.complete_chat_with_fallback",
+        return_value=completion,
+    ):
+        result = generate_sql("how many orders exist", "sqlite", schema)
+
+    assert result.used_llm is True
+    assert result.provider == "gemini"
+    assert result.model == "gemini-3.6-flash"
+    assert result.sql == "SELECT COUNT(*) FROM orders"
+
+
+def test_generate_sql_falls_back_to_heuristic_on_llm_failure():
+    from unittest.mock import patch
+    from app.core.ai.query_generator import generate_sql
+
+    schema = [{"table_name": "orders", "column_name": "id", "data_type": "INTEGER"}]
+    with patch("app.core.ai.query_generator.list_llm_clients", return_value=[object()]), patch(
+        "app.core.ai.query_generator.complete_chat_with_fallback",
+        side_effect=RuntimeError("provider unavailable"),
+    ):
+        result = generate_sql("how many orders exist", "sqlite", schema)
+
+    assert result.used_llm is False
+    assert result.provider == "heuristic"
+    assert "COUNT(*)" in result.sql
+
+
+def test_complete_chat_tries_second_provider():
+    from unittest.mock import MagicMock, patch
+    from app.core.ai.llm_client import complete_chat_with_fallback
+
+    failing = MagicMock()
+    failing.provider = "gemini"
+    failing.generate_text.side_effect = Exception("gemini unavailable")
+
+    succeeding = MagicMock()
+    succeeding.provider = "openai"
+    succeeding.model = "gpt-4o-mini"
+    succeeding.generate_text.return_value = ("SELECT 1", 1, 1, 0.0, 5.0)
+
+    with patch("app.core.ai.llm_client.list_llm_clients", return_value=[failing, succeeding]):
+        result = complete_chat_with_fallback("sys", "user", 0.0, 15.0, 100)
+
+    assert result.provider == "openai"
+    assert result.content == "SELECT 1"
+
+
+def test_gemini_falls_back_when_model_is_retired():
+    from unittest.mock import MagicMock, patch
+    from app.config import settings
+    from app.core.ai.llm_client import GeminiLLMClient, APIStatusError
+
+    mock_err_response = MagicMock()
+    mock_err_response.status_code = 404
+    not_found = APIStatusError(message="model not found", response=mock_err_response, body=None)
+
+    success = MagicMock()
+    choice = MagicMock()
+    choice.message.content = "SELECT 1"
+    success.choices = [choice]
+    success.usage = MagicMock(prompt_tokens=1, completion_tokens=1)
+
+    mock_client = MagicMock()
+    mock_client.chat.completions.create.side_effect = [not_found, success]
+
+    with patch("app.core.ai.llm_client.get_cached_client", return_value=mock_client):
+        content, *_rest = GeminiLLMClient("fake-key").generate_text("sys", "user", 0.0, 15.0, 32)
+
+    assert content == "SELECT 1"
+    models_called = [
+        call.kwargs["model"] for call in mock_client.chat.completions.create.call_args_list
+    ]
+    assert models_called[0] == settings.GEMINI_MODEL
+    assert models_called[1] != models_called[0]

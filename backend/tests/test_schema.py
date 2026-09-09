@@ -64,7 +64,7 @@ def test_sync_schema_api_endpoint(client, monkeypatch):
         {"table_name": "orders", "column_name": "id", "data_type": "INTEGER | PRIMARY KEY"},
         {"table_name": "orders", "column_name": "amount", "data_type": "FLOAT"}
     ]
-    monkeypatch.setattr("app.api.routes.schema.reflect_database_schema", lambda eng: mock_schema)
+    monkeypatch.setattr("app.core.schema.sync_service.reflect_database_schema", lambda eng: mock_schema)
 
     # 3. Trigger manual Sync API call
     sync_res = client.post(f"/api/v1/schema/{connection_id}/sync", headers=headers)

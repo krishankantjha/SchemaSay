@@ -23,6 +23,8 @@ class LLMUsageStats(BaseModel):
     total_tokens: int = Field(default=0, description="Total tokens consumed.")
     estimated_cost_usd: float = Field(default=0.0, description="Estimated LLM API usage cost in USD.")
     execution_time_ms: float = Field(default=0.0, description="LLM execution duration in milliseconds.")
+    provider: Optional[str] = Field(default=None, description="LLM provider used for this insight.")
+    model: Optional[str] = Field(default=None, description="Model identifier used for this insight.")
 
 class InsightResponse(BaseModel):
     insight: str

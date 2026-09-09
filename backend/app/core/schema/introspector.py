@@ -55,7 +55,8 @@ def reflect_database_schema(engine: Engine) -> List[Dict[str, str]]:
             schema_cache.append({
                 "table_name": table_name,
                 "column_name": col_name,
-                "data_type": data_type_string
+                "data_type": data_type_string,
+                "is_nullable": col.get("nullable", True),
             })
             
     return schema_cache

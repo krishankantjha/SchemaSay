@@ -4,10 +4,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.config import settings
-from app.api.routes import auth, connections, schema, assistant, query, insights
+from app.api.routes import auth, connections, schema, assistant, query, insights, metrics, audit, feedback
 from app.database import Base, engine
 from app.models.user import User
-from app.models.connection import DatabaseConnection, QueryAuditLog, DatabaseSchemaCache
+from app.models.connection import DatabaseConnection, QueryAuditLog, DatabaseSchemaCache, SchemaTableStats
+from app.models.metric import MetricDefinition
+from app.models.governance import ConnectionPolicy
+from app.models.learning import QueryFeedback
 
 # Initialize structured logging
 logging.basicConfig(
@@ -46,10 +49,28 @@ def startup_checks():
         logger.info("Verifying database schema tables...")
         Base.metadata.create_all(bind=engine)
     
-    if not settings.OPENAI_API_KEY:
+    from app.core.ai.llm_client import is_api_key_valid, preferred_llm_provider
+
+    configured = []
+    if is_api_key_valid(settings.OPENAI_API_KEY):
+        configured.append(f"OpenAI ({settings.OPENAI_MODEL})")
+    else:
         logger.warning("OPENAI_API_KEY is not defined. Features utilizing OpenAI capabilities will be restricted.")
-    if not settings.GEMINI_API_KEY:
+    if is_api_key_valid(settings.GEMINI_API_KEY):
+        configured.append(f"Gemini ({settings.GEMINI_MODEL})")
+    else:
         logger.warning("GEMINI_API_KEY is not defined. Features utilizing Gemini capabilities will be restricted.")
+
+    if configured:
+        logger.info(
+            "LLM providers ready: %s. Preference: %s.",
+            ", ".join(configured),
+            preferred_llm_provider(),
+        )
+    else:
+        logger.warning(
+            "No valid LLM API keys configured. Natural-language queries will use the heuristic compiler."
+        )
     logger.info("Startup checks completed.")
 
 # Global Exception Handler to capture unhandled exceptions and prevent raw traceback leakage
@@ -67,6 +88,9 @@ app.include_router(schema.router, prefix="/api/v1")
 app.include_router(assistant.router, prefix="/api/v1")
 app.include_router(query.router, prefix="/api/v1")
 app.include_router(insights.router, prefix="/api/v1")
+app.include_router(metrics.router, prefix="/api/v1")
+app.include_router(audit.router, prefix="/api/v1")
+app.include_router(feedback.router, prefix="/api/v1")
 
 @app.get("/")
 def read_root():

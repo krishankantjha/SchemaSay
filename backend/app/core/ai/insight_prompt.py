@@ -11,24 +11,18 @@ def build_insight_prompts(question: str, data_summary: str) -> Tuple[str, str]:
     sanitized_summary = sanitize_prompt_input(data_summary)
 
     system_prompt = (
-        "You are a professional business intelligence analyst. Your task is to interpret query results "
-        "and draft a clear, natural language business insight for the user.\n\n"
-        "SYSTEM RULES:\n"
-        "1. Focus strictly on explaining what the data indicates and the key trend/implication.\n"
-        "2. Keep the answer concise: write exactly 2 to 3 sentences.\n"
-        "3. Write in direct business language. Avoid technical SQL syntax or code talk.\n"
-        "4. Do not speculate or make up numbers. Only use the summary values provided in the context."
+        "You explain data query results in very simple, everyday English — like talking to a "
+        "non-technical colleague.\n"
+        "Write 1 or 2 short sentences. Lead with the direct answer to the question. "
+        "Use only numbers from the summary. No jargon, SQL, model names, or bullet lists."
     )
 
     user_prompt = (
-        "[INSTRUCTION CONTEXT]\n"
-        "Please analyze the following query execution inputs to formulate your business insight response.\n\n"
-        "[USER QUESTION]\n"
+        "Question:\n"
         f"{sanitized_question}\n\n"
-        "[QUERY RESULTS SUMMARY]\n"
+        "Results summary:\n"
         f"{sanitized_summary}\n\n"
-        "[RESPONSE]\n"
-        "Provide your 2-3 sentence business narrative insight now:"
+        "Plain answer:"
     )
 
     return system_prompt, user_prompt

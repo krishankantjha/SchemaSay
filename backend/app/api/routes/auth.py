@@ -1,6 +1,10 @@
 import secrets
 from datetime import datetime, timedelta, timezone
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from urllib.parse import quote
+
+import httpx
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.responses import RedirectResponse
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
@@ -11,6 +15,14 @@ from app.models.token import RefreshToken, RevokedToken
 from app.schemas.auth import UserCreate, UserResponse, Token, UserLogin, TokenRefreshRequest
 from app.core.auth.hashing import hash_password, verify_password
 from app.core.auth.jwt import create_access_token, decode_access_token
+from app.core.auth.google_oauth import (
+    build_frontend_callback_url,
+    build_google_auth_url,
+    create_oauth_state,
+    exchange_code_for_userinfo,
+    is_google_oauth_configured,
+    verify_oauth_state,
+)
 from app.utils.rate_limiter import login_limiter, register_limiter
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
@@ -55,6 +67,153 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
         )
         
     return user
+
+def _issue_tokens_for_user(user: User, db: Session) -> dict:
+    """Create access + refresh tokens for an authenticated user."""
+    user.failed_login_attempts = 0
+    user.locked_until = None
+
+    access_token = create_access_token(data={"sub": user.email})
+    refresh_token_str = secrets.token_hex(32)
+
+    db_refresh_token = RefreshToken(
+        token=refresh_token_str,
+        user_id=user.id,
+        expires_at=datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS),
+    )
+    db.add(db_refresh_token)
+    db.commit()
+
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token_str,
+        "token_type": "bearer",
+    }
+
+
+def _get_or_create_google_user(db: Session, profile: dict) -> User:
+    google_id = profile.get("sub")
+    email = profile.get("email")
+    if not google_id or not email:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Google account is missing required profile information",
+        )
+    if not profile.get("email_verified", False):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Google email address is not verified",
+        )
+
+    user = db.query(User).filter(User.google_id == google_id).first()
+    if user:
+        return user
+
+    user = db.query(User).filter(User.email == email).first()
+    if user:
+        if user.google_id and user.google_id != google_id:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="This email is linked to a different Google account",
+            )
+        user.google_id = google_id
+        if profile.get("name") and not user.full_name:
+            user.full_name = profile["name"]
+        db.commit()
+        db.refresh(user)
+        return user
+
+    new_user = User(
+        email=email,
+        hashed_password=None,
+        full_name=profile.get("name"),
+        google_id=google_id,
+        auth_provider="google",
+    )
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+    return new_user
+
+@router.get("/google")
+def google_login():
+    """
+    Redirects the browser to Google's OAuth consent screen.
+    """
+    if not is_google_oauth_configured():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Google sign-in is not configured on this server",
+        )
+
+    state = create_oauth_state()
+    return RedirectResponse(url=build_google_auth_url(state), status_code=status.HTTP_307_TEMPORARY_REDIRECT)
+
+
+@router.get("/google/callback")
+async def google_callback(
+    code: str | None = None,
+    state: str | None = None,
+    error: str | None = None,
+    db: Session = Depends(get_db),
+):
+    """
+    Handles Google's OAuth redirect, provisions/links the user, and sends tokens to the SPA.
+    """
+    if error:
+        return RedirectResponse(
+            url=f"{settings.FRONTEND_URL.rstrip('/')}/auth/callback#error={quote(error)}",
+            status_code=status.HTTP_307_TEMPORARY_REDIRECT,
+        )
+
+    if not is_google_oauth_configured():
+        return RedirectResponse(
+            url=f"{settings.FRONTEND_URL.rstrip('/')}/auth/callback#error={quote('Google sign-in is not configured')}",
+            status_code=status.HTTP_307_TEMPORARY_REDIRECT,
+        )
+
+    if not code or not state or not verify_oauth_state(state):
+        return RedirectResponse(
+            url=f"{settings.FRONTEND_URL.rstrip('/')}/auth/callback#error={quote('Invalid OAuth state')}",
+            status_code=status.HTTP_307_TEMPORARY_REDIRECT,
+        )
+
+    try:
+        profile = await exchange_code_for_userinfo(code)
+    except httpx.HTTPError:
+        return RedirectResponse(
+            url=f"{settings.FRONTEND_URL.rstrip('/')}/auth/callback#error={quote('Google authentication failed')}",
+            status_code=status.HTTP_307_TEMPORARY_REDIRECT,
+        )
+    except ValueError as exc:
+        return RedirectResponse(
+            url=f"{settings.FRONTEND_URL.rstrip('/')}/auth/callback#error={quote(str(exc))}",
+            status_code=status.HTTP_307_TEMPORARY_REDIRECT,
+        )
+
+    try:
+        user = _get_or_create_google_user(db, profile)
+    except HTTPException as exc:
+        return RedirectResponse(
+            url=f"{settings.FRONTEND_URL.rstrip('/')}/auth/callback#error={quote(str(exc.detail))}",
+            status_code=status.HTTP_307_TEMPORARY_REDIRECT,
+        )
+
+    if not user.is_active:
+        return RedirectResponse(
+            url=f"{settings.FRONTEND_URL.rstrip('/')}/auth/callback#error={quote('Account is deactivated')}",
+            status_code=status.HTTP_307_TEMPORARY_REDIRECT,
+        )
+
+    tokens = _issue_tokens_for_user(user, db)
+
+    return RedirectResponse(
+        url=build_frontend_callback_url(
+            access_token=tokens["access_token"],
+            refresh_token=tokens["refresh_token"],
+        ),
+        status_code=status.HTTP_307_TEMPORARY_REDIRECT,
+    )
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 def register(request: Request, user_in: UserCreate, db: Session = Depends(get_db)):
@@ -121,7 +280,13 @@ def login(request: Request, credentials: UserLogin, db: Session = Depends(get_db
                 db.commit()
 
     # Verify matching credentials
-    if not user or not verify_password(credentials.password, user.hashed_password):
+    if not user or not user.hashed_password:
+        if user and not user.hashed_password:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="This account uses Google sign-in. Continue with Google.",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
         if user:
             user.failed_login_attempts += 1
             if user.failed_login_attempts >= 5:
@@ -135,27 +300,20 @@ def login(request: Request, credentials: UserLogin, db: Session = Depends(get_db
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # Reset authentication failures upon success
-    user.failed_login_attempts = 0
-    user.locked_until = None
-    
-    # Generate token payload
-    access_token = create_access_token(data={"sub": user.email})
-    refresh_token_str = secrets.token_hex(32)
-    
-    db_refresh_token = RefreshToken(
-        token=refresh_token_str,
-        user_id=user.id,
-        expires_at=datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
-    )
-    db.add(db_refresh_token)
-    db.commit()
-    
-    return {
-        "access_token": access_token,
-        "refresh_token": refresh_token_str,
-        "token_type": "bearer"
-    }
+    if not verify_password(credentials.password, user.hashed_password):
+        user.failed_login_attempts += 1
+        if user.failed_login_attempts >= 5:
+            user.locked_until = datetime.now(timezone.utc) + timedelta(minutes=15)
+            user.failed_login_attempts = 0
+        db.commit()
+
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    return _issue_tokens_for_user(user, db)
 
 @router.post("/refresh", response_model=Token)
 def refresh(payload: TokenRefreshRequest, db: Session = Depends(get_db)):

@@ -16,4 +16,4 @@ pymssql
 pymysql
 sqlglot
 python-multipart
-
+httpx
