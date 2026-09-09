@@ -1,21 +1,26 @@
-from pydantic import BaseModel, Field, validator
-from typing import List, Dict, Any, Optional
+import json
+from typing import Any, Dict, List, Optional
+
+from pydantic import BaseModel, Field, model_validator
+
+from app.config import settings
+
 
 class InsightRequest(BaseModel):
     question: str = Field(..., min_length=1, max_length=2000)
     sql_query: str = Field(..., min_length=1, max_length=10000)
-    columns: List[str] = Field(default_factory=list)
-    rows: List[Dict[str, Any]] = Field(default_factory=list)
+    columns: List[str] = Field(default_factory=list, max_length=settings.MAX_QUERY_COLUMNS)
+    rows: List[Dict[str, Any]] = Field(default_factory=list, max_length=5000)
 
-    @validator("rows")
-    def limit_rows_size(cls, v):
-        """
-        Enforces a hard limit of 5000 records on incoming rows payload size to prevent
-        resource exhaustion.
-        """
-        if len(v) > 5000:
-            raise ValueError("Dataset payload exceeds the maximum limit of 5000 rows.")
-        return v
+    @model_validator(mode="after")
+    def validate_payload(self):
+        if any(len(column) > 256 for column in self.columns):
+            raise ValueError("Column names must be at most 256 characters")
+        payload_bytes = len(json.dumps(self.rows, default=str, ensure_ascii=False).encode("utf-8"))
+        if payload_bytes > settings.MAX_UPLOAD_BYTES:
+            raise ValueError("Dataset payload exceeds the maximum byte limit")
+        return self
+
 
 class LLMUsageStats(BaseModel):
     prompt_tokens: int = Field(default=0, description="Tokens consumed by the input prompt context.")

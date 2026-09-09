@@ -1,52 +1,60 @@
+from __future__ import annotations
+
+import re
 from typing import Tuple
+
 import sqlglot
 from sqlglot import exp
 
-def validate_sql_structure(raw_sql: str) -> Tuple[bool, str]:
-    """
-    Parses the SQL input into an Abstract Syntax Tree (AST) using sqlglot,
-    enforcing that the input is a single, read-only SELECT statement.
-    Timing attacks, CTE write bypasses, and schema modifications are blocked.
-    """
+DIALECTS = {
+    "postgresql": "postgres",
+    "mysql": "mysql",
+    "mssql": "tsql",
+    "sqlite": "sqlite",
+    "file_upload": "sqlite",
+}
+
+BLOCKED_FUNCTIONS = {
+    "pg_sleep", "sleep", "waitfor", "load_file", "readfile", "writefile",
+    "load_extension", "dblink", "lo_import", "lo_export", "pg_read_file",
+    "pg_read_binary_file", "pg_ls_dir", "openrowset", "opendatasource",
+}
+LOCKING_PATTERN = re.compile(r"\bfor\s+(?:no\s+key\s+)?(?:update|share|key\s+share)\b", re.IGNORECASE)
+BLOCKED_NODES = (
+    exp.Insert, exp.Update, exp.Delete, exp.Drop, exp.Alter, exp.Create,
+    exp.Merge, exp.Command, exp.TruncateTable, exp.Union, exp.Into,
+)
+
+
+def validate_sql_structure(raw_sql: str, db_type: str = "generic") -> Tuple[bool, str]:
+    """Validate one dialect-specific, read-only SELECT statement."""
+    if not raw_sql or len(raw_sql) > 10_000:
+        return False, "Access Denied: Query must contain between 1 and 10,000 characters."
+    if "\x00" in raw_sql:
+        return False, "Access Denied: Control characters are not allowed in SQL."
+
+    dialect = DIALECTS.get((db_type or "").lower())
     try:
-        # Parse query string using sqlglot
-        expressions = sqlglot.parse(raw_sql)
-    except Exception as e:
-        return False, f"SQL Syntax Error: Unable to parse query structure: {str(e)}"
+        expressions = sqlglot.parse(raw_sql, read=dialect) if dialect else sqlglot.parse(raw_sql)
+    except Exception:
+        return False, "SQL Syntax Error: Unable to parse the query for the target database dialect."
 
-    if not expressions:
-        return False, "Access Denied: Empty query statement."
-
-    if len(expressions) > 1:
+    if len(expressions) != 1:
         return False, "Access Denied: Stacked query statements containing semicolons are blocked for security."
 
     expr = expressions[0]
-
-    # Explicitly block mutating operation nodes, unions, and procedural calls anywhere in the AST
-    blocked_nodes = (
-        exp.Insert, exp.Update, exp.Delete, exp.Drop, exp.Alter, exp.Create,
-        exp.Merge, exp.Command, exp.TruncateTable, exp.Union, exp.Into
-    )
-
     for node in expr.walk():
-        # Check standard and anonymous function names for timing attacks
-        if isinstance(node, exp.Anonymous) and node.name.lower() in ["pg_sleep", "sleep", "waitfor"]:
-            return False, f"Access Denied: Timing functions ({node.name}) are blocked for security."
+        if isinstance(node, exp.Union):
+            return False, "Access Denied: UNION operations are blocked for security."
+        if isinstance(node, exp.Command):
+            return False, "Access Denied: Stored procedure or utility query commands are blocked for security."
+        if isinstance(node, BLOCKED_NODES):
+            return False, "Access Denied: Unsafe mutating operation is blocked. The database is read-only."
+        if isinstance(node, exp.Anonymous) and node.name.lower() in BLOCKED_FUNCTIONS:
+            return False, f"Access Denied: Timing or restricted database function ({node.name}) is blocked for security."
 
-        if isinstance(node, blocked_nodes):
-            node_name = node.__class__.__name__
-            if node_name == "Union":
-                return False, "Access Denied: UNION operations are blocked for security."
-            if node_name == "Command":
-                if "waitfor" in str(node).lower():
-                    return False, "Access Denied: Timing delay commands are blocked for security."
-                return False, "Access Denied: Stored procedure or utility query commands are blocked for security."
-            if node_name == "Into":
-                return False, "Access Denied: Unsafe mutating operation (Into) is blocked. The database is read-only."
-            return False, f"Access Denied: Unsafe mutating operation ({node_name.replace('Table', '')}) is blocked. The database is read-only."
-
-    # The root node must be SELECT (or PRAGMA for SQLite schema checks)
-    if not isinstance(expr, (exp.Select, exp.Pragma)):
+    if not isinstance(expr, exp.Select):
         return False, "Access Denied: Only read-only SELECT statements are allowed."
-
+    if LOCKING_PATTERN.search(raw_sql):
+        return False, "Access Denied: Row-locking clauses are not allowed."
     return True, ""

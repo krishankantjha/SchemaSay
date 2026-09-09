@@ -1,123 +1,123 @@
 # SchemaSay
 
-SchemaSay is a natural language analytics platform that enables non-technical users to query databases using plain English. The platform retrieves database schemas, constructs context-aware LLM prompts, generates secure SQL statements, executes them on the target database, and returns dynamic visualizations alongside business insights.
+SchemaSay is a natural-language analytics application for querying approved databases and presenting bounded results with charts and AI-generated summaries. The backend validates generated and manually supplied SQL, executes it through SQLAlchemy, records query history, and exposes a FastAPI API. The frontend is a Streamlit wrapper around a bundled HTML/CSS/JavaScript application.
 
-## Core Architecture & Hardening Features
+## Security model
 
-The system is structured as an enterprise-grade analytics pipeline:
+SchemaSay is designed for **approved database targets**, not unrestricted arbitrary connectivity. In a hosted deployment, operators should configure an explicit `ALLOWED_DB_HOSTS` allowlist and enforce corresponding network egress rules. Private, loopback, link-local, reserved, multicast, and unspecified remote addresses are blocked unless an operator explicitly allowlists the destination. SQLite paths are confined to the application-owned data directory by default; additional roots must be configured with absolute paths.
 
-1. **User Input:** Natural language question is submitted.
-2. **Introspection:** Active database schema is retrieved and formatted as LLM context.
-3. **Prompt Generation:** Prompt containing database structure, constraints, and user question is built.
-4. **AI Generation:** LLM generates a read-only SQL query.
-5. **SQL Sandbox Validation:** Query is scanned using `sqlglot` AST parsing to block:
-   * Destructive statements (`INSERT`, `UPDATE`, `DELETE`, `DROP`, `ALTER`, `TRUNCATE`).
-   * Stacked commands (semicolon query injections).
-   * UNION exfiltration routes.
-   * CTE write bypasses (`WITH ... INSERT/DELETE`) and `SELECT INTO` nodes.
-   * Blind SQL injection timing vectors (`pg_sleep()`, `sleep()`, `WAITFOR`).
-6. **Execution Engine:** Query runs asynchronously against the target database via:
-   * Thread-safe execution pools (`run_in_threadpool`).
-   * Strict 30-second timeouts enforced across dialects (PostgreSQL, MSSQL, MySQL, and C-level SQLite progress handlers).
-   * Resource-capping registries using LRU connection pool eviction (strictly limited to 50 active engines).
-   * Secured error masking (suppresses driver details, returning formatted generic feedback).
-   * Request rate limiting (30 requests/minute per host).
-7. **Visualization:** Evaluates DataFrame types to configure Plotly charts:
-   * Handles nulls, mixed formats, non-ISO dates (`DD-MM-YYYY`, `MM/DD/YYYY`), Unix timestamps, and timezone-aware datetimes.
-   * Sanitizes all columns, axes, and titles to protect against DOM XSS vectors.
-   * Aggregates duplicate date series and sorts chronological inputs.
-   * Enforces 5,000-row sampling limits and 15-category color thresholds to prevent browser locks.
-8. **AI Insights:** Second LLM stage interprets results and generates a natural language business summary.
+The SQL gate accepts one parsed, dialect-specific `SELECT` statement only. It rejects stacked statements, writes, `UNION`, transaction/control statements, row-locking clauses, file-access functions, timing functions, procedures, and SQLite pragmas. The target database credentials should still be read-only because application parsing is a defense-in-depth control rather than a database authorization boundary.
 
-## Technology Stack
+The backend enforces bounded upload bytes, upload rows and columns, query rows and columns, cell size, schema metadata entries, insight payload rows, and request SQL length. Query and LLM execution routes are rate-limited. A Redis-backed limiter is used when `REDIS_URL` is configured; without Redis, the bounded in-memory limiter is suitable only for a single-process local deployment.
 
-- **Backend:** FastAPI, Python, SQLAlchemy ORM, Alembic migrations, Pandas, Numpy, SQLGlot
-- **Frontend:** Streamlit, Plotly Express
-- **AI Engine:** OpenAI API (GPT-4) / Gemini API (GPT compatibility layer)
-- **Database:** PostgreSQL (platform metadata)
-- **Security:** JWT Auth with tokens rotation, bcrypt hashing, Fernet symmetric credential encryption, AST-based `sqlglot` read-only sandboxes, rate-limit gates, connection pool evictions, and DOM XSS sanitizers
+Refresh tokens are stored as SHA-256 hashes and consumed atomically during rotation. Existing plaintext refresh-token rows are invalidated by the migration that introduces the hashed column. Access tokens include issuer and audience claims and use the fixed HS256 algorithm configured by the application.
 
-## Repository Structure
+## Technology stack
 
-```
+| Layer | Technologies |
+|---|---|
+| Backend | FastAPI, SQLAlchemy, Alembic, Pandas, SQLGlot, Python 3.10+ |
+| Frontend | Streamlit wrapper, vanilla HTML/CSS/JavaScript, Chart.js, CodeMirror |
+| AI | OpenAI-compatible provider and optional Gemini-compatible provider |
+| Metadata database | PostgreSQL in normal deployment; SQLite is supported for isolated local tests |
+| Target databases | PostgreSQL, MySQL, Microsoft SQL Server, SQLite, and application-owned uploads |
+
+## Repository structure
+
+```text
 schemasay/
-├── backend/                  # FastAPI backend application
+├── backend/
 │   ├── app/
-│   │   ├── api/              # Route handlers
-│   │   ├── core/             # Business logic (auth, execution, schema introspection, AI)
-│   │   ├── models/           # ORM models (SQLAlchemy)
-│   │   ├── schemas/          # Pydantic schemas
-│   │   └── utils/            # General helpers
+│   │   ├── api/              # FastAPI route handlers
+│   │   ├── core/             # Authentication, connectors, SQL, AI, schema, charts
+│   │   ├── models/           # SQLAlchemy models
+│   │   ├── schemas/          # Pydantic request and response schemas
+│   │   └── utils/            # Shared utilities and rate limiting
+│   ├── alembic/              # Versioned metadata-database migrations
+│   ├── requirements.txt
+│   └── requirements-dev.txt
+├── frontend/
+│   ├── app.py                # Streamlit entry point and HTML bundler
+│   ├── index.html
+│   ├── js/                   # Frontend modules
+│   ├── css/
 │   └── requirements.txt
-└── frontend/                 # Streamlit frontend application
-    ├── app.py                # UI entry point
-    ├── api_client.py         # HTTP client wrapper
-    └── requirements.txt
+├── .env.example
+├── docker-compose.yml
+└── pyproject.toml
 ```
 
-## Quick Start
+## Local setup
 
 ### Prerequisites
 
-- Python 3.10 or higher
-- Docker and Docker Compose
-- OpenAI API Key
+Use Python 3.10 or later, Docker Compose for local PostgreSQL, and an optional OpenAI-compatible or Gemini-compatible API key for AI features. The application can run in heuristic/offline mode when no LLM provider is configured.
 
-### Local Installation
+### Configure the environment
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/yourusername/schemasay.git
-   cd schemasay
-   ```
+Copy the template and replace every placeholder with a generated value. `SECRET_KEY` must be at least 32 characters. `ENCRYPTION_KEY` must be a valid Fernet key.
 
-2. Set up environment variables:
-   Copy `.env.example` to `.env` and fill in your configuration keys:
-   ```bash
-   cp .env.example .env
-   ```
-
-3. Start the PostgreSQL database:
-   ```bash
-   docker compose up -d
-   ```
-
-4. Set up the backend:
-   ```bash
-   cd backend
-   python -m venv venv
-   source venv/bin/activate  # On Windows use: venv\Scripts\activate
-   pip install -r requirements.txt
-   uvicorn app.main:app --reload
-   ```
-
-5. Set up the frontend:
-   Open a new terminal window and navigate to the frontend directory:
-   ```bash
-   cd frontend
-   python -m venv venv
-   source venv/bin/activate  # On Windows use: venv\Scripts\activate
-   pip install -r requirements.txt
-   streamlit run app.py
-   ```
-
-### Database Migrations
-
-Initialize and update your PostgreSQL database schemas using Alembic:
 ```bash
-cd backend
-# Apply migrations to local PostgreSQL database
-venv\Scripts\alembic upgrade head
+cp .env.example .env
 ```
 
-### Running the Test Suite
+For a hosted deployment, configure `ALLOWED_DB_HOSTS` explicitly. For local SQLite files, leave `ALLOWED_SQLITE_ROOTS` empty to use the application-owned data directory, or provide absolute approved directories. Configure `REDIS_URL` when running multiple workers or instances.
 
-Validate authentication security, token rotation, brute-force lockouts, symmetric database credential encryption, and spreadsheet file ingestion pipelines using the automated test suite:
+### Start PostgreSQL
+
+The Compose service binds its port to localhost only and uses the `POSTGRES_*` variables from `.env`.
+
 ```bash
-# Execute isolated, in-memory SQLite integration test cases
-venv\Scripts\pytest backend/tests/
+docker compose up -d
 ```
+
+### Install and run the backend
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r backend/requirements.txt
+pip install -r backend/requirements-dev.txt
+alembic -c backend/alembic.ini upgrade head
+PYTHONPATH=backend uvicorn app.main:app --reload
+```
+
+Schema changes are managed by Alembic. The application does not call `create_all()` during production startup. Check `/health` for liveness and `/ready` for metadata-database readiness.
+
+### Install and run the frontend
+
+```bash
+python -m venv frontend/.venv
+source frontend/.venv/bin/activate
+pip install -r frontend/requirements.txt
+SCHEMASAY_API_BASE_URL=http://localhost:8000/api/v1 \
+SCHEMASAY_DEMO_MODE=false \
+streamlit run frontend/app.py
+```
+
+Demo mode is disabled by default. Set `SCHEMASAY_DEMO_MODE=true` only for an intentionally isolated demonstration; the UI should display demo data only in that mode.
+
+## Testing and quality checks
+
+The backend test harness supplies an isolated SQLite metadata database and test-only connector roots, so the ordinary test command is self-contained:
+
+```bash
+PYTHONPATH=backend pytest -q backend/tests
+python -m compileall -q backend/app backend/tests
+node --check frontend/js/*.js
+ruff check backend/app backend/tests
+bandit -r backend/app
+pip-audit -r backend/requirements.txt
+```
+
+CI should run these checks on every change, together with a PostgreSQL migration job and a browser smoke test using `SCHEMASAY_DEMO_MODE=false`.
+
+## API health and limits
+
+`GET /health` is a lightweight liveness endpoint. `GET /ready` verifies that the metadata database can execute a simple query. Production deployments should place the API behind TLS termination, configure trusted proxy behavior explicitly, enforce network egress restrictions, and use a read-only account on each target database.
+
+The default resource limits are intentionally conservative and can be adjusted through environment variables: uploads are capped at 10 MB, uploads at 100,000 rows and 100 columns, query results at 10,000 rows and 200 columns, cells at 32 KiB, schema metadata at 20,000 entries, and insight requests at 5,000 rows. Raising these limits should be accompanied by load testing and worker-level memory controls.
 
 ## License
 
-This project is licensed under the MIT License. See the LICENSE file for details.
+This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.

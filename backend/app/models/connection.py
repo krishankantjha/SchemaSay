@@ -94,3 +94,11 @@ class QueryAuditLog(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     connection = relationship("DatabaseConnection", back_populates="audit_logs")
+
+    @property
+    def connection_name(self):
+        return self.connection.name if self.connection else None
+
+    @property
+    def query_type(self):
+        return "direct_sql" if self.question == "Manual SQL Editor Query" else "assistant"

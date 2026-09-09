@@ -1,11 +1,8 @@
 import os
-import time
 import uuid
 import threading
-import pytest
 from unittest.mock import patch
 from fastapi import status
-from sqlalchemy import create_engine, text
 from app.core.connections.pool import engine_registry
 from app.models.connection import DatabaseConnection
 from tests.test_assistant import get_auth_token

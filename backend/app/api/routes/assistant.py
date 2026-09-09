@@ -45,6 +45,7 @@ def _to_response(result) -> QueryResponse:
 @router.post("/query", response_model=QueryResponse, status_code=status.HTTP_200_OK)
 def query_database_with_assistant(
     payload: QueryRequest,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -66,6 +67,7 @@ def query_database_with_assistant(
 @router.post("/execute-raw", response_model=QueryResponse, status_code=status.HTTP_200_OK)
 def execute_raw_sql_query(
     payload: RawQueryRequest,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):

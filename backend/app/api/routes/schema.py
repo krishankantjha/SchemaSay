@@ -14,6 +14,7 @@ from app.core.connections.connector import get_connection
 from app.core.schema.sync_service import sync_connection_schema_cache
 
 router = APIRouter(prefix="/schema", tags=["Database Schema Introspection"])
+logger = logging.getLogger("schemasay.schema")
 
 
 def _humanize_sync_error(exc: Exception) -> str:

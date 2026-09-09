@@ -2,6 +2,8 @@ from typing import List, Dict
 from sqlalchemy import inspect
 from sqlalchemy.engine import Engine
 
+from app.config import settings
+
 def reflect_database_schema(engine: Engine) -> List[Dict[str, str]]:
     """
     Introspects the target database connection, maps all tables, columns, 
@@ -52,6 +54,8 @@ def reflect_database_schema(engine: Engine) -> List[Dict[str, str]]:
             if type_modifiers:
                 data_type_string += f" | {' | '.join(type_modifiers)}"
                 
+            if len(schema_cache) >= settings.MAX_SCHEMA_ENTRIES:
+                raise ValueError("Database schema exceeds the supported metadata limit")
             schema_cache.append({
                 "table_name": table_name,
                 "column_name": col_name,

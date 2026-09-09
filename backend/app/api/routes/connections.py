@@ -13,7 +13,7 @@ from app.models.governance import ConnectionPolicy
 from app.schemas.connection import ConnectionCreate, ConnectionResponse, ConnectionTest, AuditLogResponse
 from app.schemas.governance import ConnectionPolicyResponse, ConnectionPolicyUpdate
 from app.api.routes.auth import get_current_user
-from app.core.connections.encryptor import encrypt_password
+from app.core.connections.encryptor import decrypt_password, encrypt_password
 from app.core.connections.connector import test_connection, process_file_upload, dispose_connection_engine, get_connection
 from app.core.schema.sync_service import sync_connection_schema_cache
 
@@ -25,6 +25,14 @@ def test_db_connection(payload: ConnectionTest, current_user: User = Depends(get
     Tests database connectivity using credentials before saving.
     Protected by JWT authentication.
     """
+    try:
+        if payload.db_type.lower() in {"postgresql", "mysql", "mssql"}:
+            validate_remote_host(payload.host or "")
+        else:
+            validate_database_target(payload.db_type, payload.host, payload.database_name)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
     success, error_message = test_connection(
         db_type=payload.db_type,
         host=payload.host or "",
@@ -59,6 +67,13 @@ def create_connection(payload: ConnectionCreate, db: Session = Depends(get_db), 
             detail="A connection with this name already exists"
         )
         
+    try:
+        canonical_database_name = validate_database_target(
+            payload.db_type, payload.host, payload.database_name
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
     # Encrypt raw passwords before saving
     encrypted_pw = encrypt_password(payload.password) if payload.password else None
     
@@ -69,7 +84,7 @@ def create_connection(payload: ConnectionCreate, db: Session = Depends(get_db), 
         host=payload.host,
         port=payload.port,
         username=payload.username,
-        database_name=payload.database_name,
+        database_name=canonical_database_name,
         encrypted_password=encrypted_pw
     )
     
@@ -92,8 +107,8 @@ def create_connection(payload: ConnectionCreate, db: Session = Depends(get_db), 
             db_connection.id,
         )
         dispose_connection_engine(db_connection)
-    except Exception as e:
-        logger.error(f"Auto-sync failed on database connection registration: {str(e)}", exc_info=True)
+    except Exception:
+        logger.exception("Auto-sync failed on database connection registration")
 
     return db_connection
 
@@ -121,14 +136,26 @@ def upload_file_connection(
         )
 
     try:
-        content = file.file.read()
-        # Ingest file content using the connector engine
-        sqlite_path, table_name = process_file_upload(file.filename, content)
-    except Exception as e:
+        chunks = []
+        total_bytes = 0
+        while True:
+            chunk = file.file.read(min(1024 * 1024, settings.MAX_UPLOAD_BYTES + 1 - total_bytes))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            total_bytes += len(chunk)
+            if total_bytes > settings.MAX_UPLOAD_BYTES:
+                raise ValueError(f"Uploaded files must be at most {settings.MAX_UPLOAD_BYTES} bytes")
+        content = b"".join(chunks)
+        sqlite_path, table_name = process_file_upload(file.filename or "", content)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except Exception:
+        logger.exception("Failed to process file upload")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Failed to process file upload: {str(e)}"
-        )
+            detail="Failed to process file upload"
+        ) from None
 
     db_connection = DatabaseConnection(
         user_id=current_user.id,
@@ -151,8 +178,8 @@ def upload_file_connection(
             profile=False,
         )
         dispose_connection_engine(db_connection)
-    except Exception as e:
-        logger.error(f"Auto-sync failed on file upload ingestion: {str(e)}", exc_info=True)
+    except Exception:
+        logger.exception("Auto-sync failed on file upload ingestion")
 
     return db_connection
 
@@ -162,6 +189,106 @@ def list_connections(db: Session = Depends(get_db), current_user: User = Depends
     Queries and lists all database connection metadata records configured by the active user.
     """
     return db.query(DatabaseConnection).filter(DatabaseConnection.user_id == current_user.id).all()
+
+@router.post("/{connection_id}/test", response_model=ConnectionTestResponse, status_code=status.HTTP_200_OK)
+def test_saved_connection(
+    connection_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Tests a saved connection without sending its encrypted credential to the browser."""
+    connection = db.query(DatabaseConnection).filter(
+        DatabaseConnection.id == connection_id,
+        DatabaseConnection.user_id == current_user.id,
+    ).first()
+    if not connection:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Database connection not found")
+
+    try:
+        password = decrypt_password(connection.encrypted_password) if connection.encrypted_password else ""
+        healthy, error_message = test_connection(
+            db_type=connection.db_type,
+            host=connection.host or "",
+            port=connection.port or 0,
+            username=connection.username or "",
+            password=password,
+            database_name=connection.database_name,
+        )
+    except Exception:
+        logger.exception("Saved connection test failed for connection ID %s", connection_id)
+        healthy, error_message = False, "Database connection test failed"
+
+    if healthy:
+        return ConnectionTestResponse(
+            success=True,
+            healthy=True,
+            message="Database connection test succeeded",
+        )
+
+    return ConnectionTestResponse(
+        success=False,
+        healthy=False,
+        message=error_message or "Database connection test failed",
+    )
+
+
+@router.put("/{connection_id}", response_model=ConnectionResponse, status_code=status.HTTP_200_OK)
+def update_connection(
+    connection_id: int,
+    payload: ConnectionUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Updates saved connection metadata and optionally replaces its encrypted password."""
+    connection = db.query(DatabaseConnection).filter(
+        DatabaseConnection.id == connection_id,
+        DatabaseConnection.user_id == current_user.id,
+    ).first()
+    if not connection:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Database connection not found")
+
+    duplicate = db.query(DatabaseConnection).filter(
+        DatabaseConnection.user_id == current_user.id,
+        DatabaseConnection.name == payload.name,
+        DatabaseConnection.id != connection_id,
+    ).first()
+    if duplicate:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="A connection with this name already exists")
+
+    try:
+        if payload.db_type in {"postgresql", "mysql", "mssql"}:
+            validate_remote_host(payload.host or "")
+        canonical_database_name = validate_database_target(
+            payload.db_type,
+            payload.host,
+            payload.database_name,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    if payload.db_type in {"postgresql", "mysql", "mssql"}:
+        if not payload.password and not connection.encrypted_password:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Password is required for this connection")
+    else:
+        connection.encrypted_password = None
+
+    connection.name = payload.name
+    connection.db_type = payload.db_type
+    connection.host = payload.host
+    connection.port = payload.port
+    connection.username = payload.username
+    connection.database_name = canonical_database_name
+    if payload.password:
+        connection.encrypted_password = encrypt_password(payload.password)
+
+    db.query(DatabaseSchemaCache).filter(
+        DatabaseSchemaCache.connection_id == connection.id,
+    ).delete(synchronize_session=False)
+    db.commit()
+    db.refresh(connection)
+    dispose_connection_engine(connection)
+    return connection
+
 
 @router.delete("/{connection_id}", status_code=status.HTTP_200_OK)
 def delete_connection(connection_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):

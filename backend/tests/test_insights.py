@@ -1,4 +1,3 @@
-import pytest
 from unittest.mock import patch, MagicMock
 from fastapi import status
 from app.core.ai.insight_summarizer import summarize_query_dataset
@@ -121,7 +120,6 @@ def test_provider_configuration_factory():
     Asserts client mappings are constructed based on active configuration override variables.
     """
     import os
-    from app.config import settings
 
     with patch.dict(os.environ, {"INSIGHT_PROVIDER": "openai"}), \
          patch("app.core.ai.llm_client.is_api_key_valid", return_value=True):

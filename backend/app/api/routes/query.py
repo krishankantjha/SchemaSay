@@ -31,7 +31,7 @@ class DirectQueryResponse(BaseModel):
     rows: List[Dict[str, Any]] = Field(default_factory=list)
     row_count: int
     execution_time_ms: float
-    truncated: bool
+    truncated: bool = False
     query_id: str
     chart_config: ChartConfig = Field(default_factory=ChartConfig)
 
@@ -52,7 +52,8 @@ async def execute_raw_query(
     governance policy, audit) before running against the target database.
     """
     client_ip = request.client.host if request.client else "unknown"
-    if query_limiter.check_rate_limit(client_ip):
+    limiter_key = f"user:{current_user.id}:ip:{client_ip}"
+    if query_limiter.check_rate_limit(limiter_key):
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Too many query execution requests. Please wait before trying again.",

@@ -1,6 +1,5 @@
 import os
 import uuid
-import pytest
 from fastapi import status
 from sqlalchemy import create_engine, text
 from app.models.connection import DatabaseConnection, QueryAuditLog

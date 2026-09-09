@@ -1,10 +1,10 @@
 import threading
 import logging
-from typing import Dict
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine, URL
 from app.models.connection import DatabaseConnection
 from app.core.connections.encryptor import decrypt_password
+from app.core.security.connection_policy import validate_database_target
 
 logger = logging.getLogger("schemasay.pool")
 
@@ -34,6 +34,9 @@ class EngineRegistry:
         masked in logs and output structures.
         """
         db_type = record.db_type.lower()
+        database_name = validate_database_target(
+            db_type, record.host, record.database_name, must_exist=db_type == "file_upload"
+        )
         password = decrypt_password(record.encrypted_password) if record.encrypted_password else ""
 
         if db_type == "postgresql":
@@ -43,7 +46,7 @@ class EngineRegistry:
                 password=password,
                 host=record.host,
                 port=record.port,
-                database=record.database_name
+                database=database_name
             )
         elif db_type == "mysql":
             return URL.create(
@@ -52,7 +55,7 @@ class EngineRegistry:
                 password=password,
                 host=record.host,
                 port=record.port,
-                database=record.database_name
+                database=database_name
             )
         elif db_type == "mssql":
             return URL.create(
@@ -61,12 +64,12 @@ class EngineRegistry:
                 password=password,
                 host=record.host,
                 port=record.port,
-                database=record.database_name
+                database=database_name
             )
         elif db_type in ["sqlite", "file_upload"]:
             return URL.create(
                 drivername="sqlite",
-                database=record.database_name
+                database=database_name
             )
         else:
             raise ValueError(f"Unsupported database connection type: {db_type}")
@@ -78,13 +81,8 @@ class EngineRegistry:
         """
         connection_id = record.id
         
-        # Fast path: engine already cached
-        if connection_id in self._engines:
-            with self._registry_lock:
-                self._engines.move_to_end(connection_id)
-            return self._engines[connection_id]
-
-        # Engine not in cache — acquire lock and create a new one
+        # All cache reads and mutations occur under the registry lock. This avoids
+        # races between concurrent requests and keeps LRU ordering coherent.
         with self._registry_lock:
             if connection_id in self._engines:
                 self._engines.move_to_end(connection_id)

@@ -1,17 +1,20 @@
-version: '3.8'
-
 services:
   postgres:
     image: postgres:15-alpine
     container_name: schemasay-db
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: schemasay
+      POSTGRES_USER: ${POSTGRES_USER:-schemasay}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-schemasay-dev-only-change-me}
+      POSTGRES_DB: ${POSTGRES_DB:-schemasay}
     ports:
-      - "5432:5432"
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 volumes:
   postgres_data:
