@@ -19,7 +19,7 @@ type QueryTrustPanelProps = {
 
 export function QueryTrustPanel({
   explanation,
-  correlationId,
+  correlationId: _correlationId,
   error,
   sql,
 }: QueryTrustPanelProps) {
