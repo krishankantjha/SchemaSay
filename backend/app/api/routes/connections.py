@@ -10,12 +10,20 @@ from app.database import get_db
 from app.models.user import User
 from app.models.connection import DatabaseConnection, QueryAuditLog, DatabaseSchemaCache
 from app.models.governance import ConnectionPolicy
-from app.schemas.connection import ConnectionCreate, ConnectionResponse, ConnectionTest, AuditLogResponse
+from app.schemas.connection import (
+    ConnectionCreate,
+    ConnectionResponse,
+    ConnectionTest,
+    ConnectionTestResponse,
+    ConnectionUpdate,
+    AuditLogResponse,
+)
 from app.schemas.governance import ConnectionPolicyResponse, ConnectionPolicyUpdate
 from app.api.routes.auth import get_current_user
 from app.core.connections.encryptor import decrypt_password, encrypt_password
 from app.core.connections.connector import test_connection, process_file_upload, dispose_connection_engine, get_connection
 from app.core.schema.sync_service import sync_connection_schema_cache
+from app.core.security.connection_policy import validate_database_target, validate_remote_host
 
 router = APIRouter(prefix="/connections", tags=["Database Connections"])
 

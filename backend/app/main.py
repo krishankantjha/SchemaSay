@@ -4,9 +4,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
-from app.api.routes import assistant, auth, connections, insights, query, schema
 from app.config import settings
-from app.api.routes import auth, connections, schema, assistant, query, insights, metrics, audit, feedback
+from app.api.routes import assistant, auth, connections, insights, query, schema, metrics, audit, feedback
 from app.database import Base, engine
 from app.models.user import User
 from app.models.connection import DatabaseConnection, QueryAuditLog, DatabaseSchemaCache, SchemaTableStats

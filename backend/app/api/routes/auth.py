@@ -88,7 +88,7 @@ def _issue_tokens_for_user(user: User, db: Session) -> dict:
     refresh_token_str = secrets.token_hex(32)
 
     db_refresh_token = RefreshToken(
-        token=refresh_token_str,
+        token_hash=_hash_refresh_token(refresh_token_str),
         user_id=user.id,
         expires_at=datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS),
     )
