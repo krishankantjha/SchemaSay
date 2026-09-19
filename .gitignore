@@ -112,3 +112,6 @@ Desktop.ini
 
 # Cursor / local agent artifacts
 .cursor/
+
+# Local dev notes (not for GitHub)
+TRIAGE.md
