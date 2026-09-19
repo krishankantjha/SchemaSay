@@ -1,10 +1,49 @@
 # SchemaSay
 
+<p align="center">
+  <img src="frontend/assets/light_logo.png" alt="SchemaSay logo" width="120" />
+</p>
+
+<p align="center">
+  <a href="https://github.com/krishankantjha/schemasay/actions/workflows/ci.yml"><img src="https://github.com/krishankantjha/schemasay/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT" /></a>
+  <img src="https://img.shields.io/badge/Python-3.10+-blue.svg" alt="Python 3.10+" />
+  <img src="https://img.shields.io/badge/tests-195-green.svg" alt="195 tests" />
+  <img src="https://img.shields.io/badge/eval-20%2F20-brightgreen.svg" alt="Heuristic eval 20/20" />
+</p>
+
 > Ask questions in plain English and get answers from your database — with charts, explanations, and an audit trail.
 
-SchemaSay is a full-stack analytics app. You connect a database, ask questions in natural language or run SQL by hand, and review results with trust signals and history. The backend validates SQL, runs read-only queries, and logs each request. The frontend is a React workbench for day-to-day use.
+SchemaSay is a full-stack analytics app. Connect a database, ask questions in natural language or run SQL by hand, and review results with trust signals and history.
+
+**195 tests** · **7 product modules** · **FastAPI + React** · **Read-only SQL gate** · **Heuristic + optional LLM**
 
 **Demo:** [TODO: Add live demo URL or screen recording link]
+
+## Table of contents
+
+- [Why I built this](#why-i-built-this)
+- [Features](#features)
+- [Screenshots](#screenshots)
+- [Quick start](#quick-start)
+- [Getting started](#getting-started)
+- [Example walkthrough](#example-walkthrough)
+- [How it works](#how-it-works)
+- [Sample data for testing](#sample-data-for-testing)
+- [Project structure](#project-structure)
+- [Security](#security)
+- [Testing](#testing)
+- [Troubleshooting](#troubleshooting)
+- [Known limitations](#known-limitations)
+- [Roadmap](#roadmap)
+- [License](#license)
+- [Author](#author)
+
+---
+
+## Why I built this
+
+Most NL→SQL tools stop at generating SQL. SchemaSay focuses on the full loop: schema-aware generation, read-only execution, governance rules, trust explanations, audit history, and user feedback — so analytics feels safe for people who do not write SQL every day.
 
 ---
 
@@ -16,33 +55,60 @@ SchemaSay is a full-stack analytics app. You connect a database, ask questions i
 - **Metrics** — Define reusable business metrics and preview them
 - **Govern** — Set connection policies (blocked tables/columns, confidence rules)
 - **Audit** — Query history, detail view, replay, and pipeline telemetry
-- **Connections** — Add PostgreSQL, MySQL, SQL Server, SQLite, or CSV/Excel uploads; sync schema; manage business-language aliases
+- **Connections** — PostgreSQL, MySQL, SQL Server, SQLite, or CSV/Excel uploads; schema sync; business-language aliases
 - **Auth** — Email/password login, token refresh, and optional Google sign-in
-- **Feedback** — Rate whether an answer helped, with optional reason chips and SQL correction
+- **Feedback** — Rate whether an answer helped, with reason chips and optional SQL correction
 
-Other UI helpers: saved queries and recent queries (stored in the browser), command palette, keyboard shortcuts, light/dark theme.
-
----
-
-## Tech stack
-
-| Layer | Technologies |
-|-------|--------------|
-| Backend | FastAPI, SQLAlchemy, Alembic, Pandas, SQLGlot, Python 3.10+ |
-| Frontend | React 19, TypeScript, Vite, Tailwind CSS, TanStack Query, Recharts |
-| AI | OpenAI-compatible and Gemini-compatible providers; heuristic NL→SQL compiler when no API key is set |
-| Platform database | PostgreSQL (via Docker Compose) or SQLite (simple local setup) |
-| Target databases | PostgreSQL, MySQL, Microsoft SQL Server, SQLite, CSV/Excel upload |
+Also included: saved queries and recent queries (browser storage), command palette, keyboard shortcuts, light/dark theme.
 
 ---
 
 ## Screenshots
 
-[TODO: Add screenshot — Ask workbench with results]
+> Add images to [`docs/screenshots/`](docs/screenshots/) and uncomment the lines below.
 
-[TODO: Add screenshot — Connections and schema aliases]
+<!-- ![Ask workbench](./docs/screenshots/ask-workbench.png) -->
+<!-- *Natural-language query with results, chart, and trust panel.* -->
 
-[TODO: Add screenshot — Audit page with pipeline telemetry]
+<!-- ![Connections and aliases](./docs/screenshots/connections-aliases.png) -->
+<!-- *Connection setup with schema aliases.* -->
+
+<!-- ![Audit telemetry](./docs/screenshots/audit-telemetry.png) -->
+<!-- *Audit detail with pipeline telemetry.* -->
+
+[TODO: Add screenshots — save PNGs to `docs/screenshots/` and uncomment the lines above]
+
+---
+
+## Quick start
+
+Minimal path to run locally (SQLite platform DB, no Docker):
+
+```bash
+git clone https://github.com/krishankantjha/schemasay.git
+cd schemasay
+cp .env.example .env
+cp frontend/.env.example frontend/.env
+```
+
+Edit `.env`: set `DATABASE_URL=sqlite:///./backend/schemasay_local.db`, plus real `SECRET_KEY` and `ENCRYPTION_KEY` (see [Getting started](#getting-started)).
+
+**Terminal 1 — backend:**
+
+```bash
+python -m venv .venv && .venv\Scripts\activate    # Windows
+pip install -r backend/requirements.txt
+alembic -c backend/alembic.ini upgrade head
+$env:PYTHONPATH="backend"; uvicorn app.main:app --reload
+```
+
+**Terminal 2 — frontend:**
+
+```bash
+cd frontend && npm install && npm run dev
+```
+
+Open **http://localhost:5173** · API docs at **http://localhost:8000/docs**
 
 ---
 
@@ -50,25 +116,16 @@ Other UI helpers: saved queries and recent queries (stored in the browser), comm
 
 ### Prerequisites
 
-- Python 3.10 or later
-- Node.js 22 or later (for the frontend)
-- Optional: Docker (for PostgreSQL as the platform database)
-- Optional: OpenAI or Gemini API key (for LLM-backed SQL and richer insights). Without a key, Ask uses the built-in heuristic compiler.
+- Python 3.10+
+- Node.js 22+
+- Optional: Docker (PostgreSQL platform DB)
+- Optional: OpenAI or Gemini API key (without one, Ask uses the heuristic compiler)
 
-### 1. Clone and configure
-
-```bash
-git clone <your-repo-url>
-cd SchemaSay
-cp .env.example .env
-cp frontend/.env.example frontend/.env
-```
-
-Edit `.env` and set real values (placeholders are rejected on startup):
+### Configure environment
 
 | Variable | Purpose |
 |----------|---------|
-| `DATABASE_URL` | Platform database (see options below) |
+| `DATABASE_URL` | Platform database (SQLite or PostgreSQL) |
 | `SECRET_KEY` | JWT signing key (32+ characters) |
 | `ENCRYPTION_KEY` | Fernet key for stored connection passwords |
 | `OPENAI_API_KEY` / `GEMINI_API_KEY` | Optional LLM providers |
@@ -80,61 +137,35 @@ Generate a Fernet key:
 python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 ```
 
-**Platform database options**
+**PostgreSQL (Docker):** `docker compose up -d` — use the `DATABASE_URL` from `.env.example`.
 
-PostgreSQL (Docker):
-
-```bash
-docker compose up -d
-```
-
-Use the `DATABASE_URL` from `.env.example` (PostgreSQL on localhost).
-
-SQLite (no Docker):
+**SQLite (simplest):**
 
 ```env
 DATABASE_URL=sqlite:///./backend/schemasay_local.db
 ```
 
-Use an absolute path on Windows if you prefer, for example:
+On Windows, an absolute path also works: `sqlite:///C:/path/to/schemasay/backend/schemasay_local.db`
 
-```env
-DATABASE_URL=sqlite:///C:/path/to/SchemaSay/backend/schemasay_local.db
-```
-
-### 2. Backend
+### Backend
 
 ```bash
-python -m venv .venv
-
-# Windows
-.venv\Scripts\activate
-
-# macOS / Linux
-# source .venv/bin/activate
-
-pip install -r backend/requirements.txt
-pip install -r backend/requirements-dev.txt
+pip install -r backend/requirements-dev.txt   # optional: tests and lint tools
 alembic -c backend/alembic.ini upgrade head
 ```
 
-Run the API:
-
-```bash
+```powershell
 # Windows PowerShell
 $env:PYTHONPATH="backend"
 uvicorn app.main:app --reload
-
-# macOS / Linux
-# PYTHONPATH=backend uvicorn app.main:app --reload
 ```
 
-- API: `http://localhost:8000`
-- Swagger docs: `http://localhost:8000/docs`
-- Health: `GET /health`
-- Readiness: `GET /ready`
+```bash
+# macOS / Linux
+PYTHONPATH=backend uvicorn app.main:app --reload
+```
 
-### 3. Frontend
+### Frontend
 
 ```bash
 cd frontend
@@ -142,153 +173,140 @@ npm install
 npm run dev
 ```
 
-- App: `http://localhost:5173`
+Vite proxies `/api` to port 8000 in development.
 
-In development, Vite proxies `/api` to the backend on port 8000.
+### First use
 
-### 4. First use
+1. Create an account at http://localhost:5173 (or sign in with Google if configured).
+2. Add a connection or upload a CSV/Excel file.
+3. Sync schema.
+4. Open **Ask** and run a question.
 
-1. Open `http://localhost:5173` and create an account (or sign in with Google if configured).
-2. Go to **Connections** and add a database or upload a CSV/Excel file.
-3. Sync schema from the connection or Schema page.
-4. Open **Ask**, pick a question, and review results, trust info, and audit history.
+---
+
+## Example walkthrough
+
+**Question:** “How many orders were placed last month?”
+
+| Step | What happens |
+|------|----------------|
+| 1 | Ask sends the question to `/api/v1/assistant/query` |
+| 2 | Pipeline generates SQL (heuristic or LLM) |
+| 3 | SQL is validated, grounded against schema, and checked against policies |
+| 4 | Query runs on the target database (bounded row limit) |
+| 5 | UI shows results table, chart, trust panel, and audit log entry |
+
+Try **Audit** afterward to inspect the generated SQL and pipeline telemetry.
 
 ---
 
 ## How it works
 
-```text
-User → React UI → FastAPI
-                    → Query pipeline (NL→SQL or raw SQL)
-                    → SQL validation + schema grounding + policy checks
-                    → Execute on target database (bounded rows)
-                    → Results, chart, explanation, audit log
+```mermaid
+flowchart LR
+  UI[React Workbench] --> API[FastAPI]
+  API --> Pipe[Query Pipeline]
+  Pipe --> Gen[NL to SQL]
+  Pipe --> Val[SQL Validation]
+  Pipe --> Ground[Schema Grounding]
+  Pipe --> DB[(Target Database)]
+  Pipe --> Audit[Audit Log]
 ```
 
-**NL→SQL path:** A heuristic compiler handles many questions offline. When LLM API keys are present, the system can route harder questions to OpenAI or Gemini and fall back to heuristics if needed.
+- **NL→SQL:** Heuristic compiler works offline; LLM keys enable harder questions with heuristic fallback.
+- **Pipeline:** Input → generation → schema grounding → policy checks → validation → execution → results, chart, trust explanation, audit log.
 
-**Security:** Only single `SELECT` statements are allowed. Writes, stacked queries, and many dangerous patterns are blocked. Connection hosts can be restricted with allowlists. Target database accounts should still be read-only.
+Interactive API docs (when the backend is running): http://localhost:8000/docs
+
+---
+
+## Sample data for testing
+
+The eval harness uses a multi-table seed schema (`users`, `orders`, `products`, `order_items`, etc.). DDL is in `backend/tests/fixtures/eval_schema_metadata.py` (`EVAL_SEED_DDL`).
+
+For manual E2E testing:
+
+1. Create a SQLite file with those tables and sample rows, **or**
+2. Upload a CSV with a single table for a quick smoke test.
+
+Run the offline eval benchmark:
+
+```bash
+python backend/scripts/run_heuristic_eval.py
+```
+
+**Latest eval result (seed schema):** 20/20 cases passed (100% execution accuracy).
 
 ---
 
 ## Project structure
 
 ```text
-SchemaSay/
-├── backend/
-│   ├── app/
-│   │   ├── api/routes/       # REST endpoints
-│   │   ├── core/
-│   │   │   ├── ai/           # Heuristic compiler, query generator, insights
-│   │   │   ├── pipeline/     # Query orchestration
-│   │   │   ├── security/     # SQL validation
-│   │   │   ├── schema/       # Schema graph and sync
-│   │   │   ├── eval/         # Heuristic benchmark harness
-│   │   │   └── ...
-│   │   ├── models/           # SQLAlchemy models
-│   │   └── schemas/          # Pydantic request/response types
-│   ├── alembic/              # Platform DB migrations
-│   ├── scripts/
-│   │   └── run_heuristic_eval.py
-│   └── tests/                # Backend test suite
-├── frontend/
-│   └── src/
-│       ├── features/         # Ask, SQL, Schema, Metrics, Govern, Audit, Connections, Auth
-│       ├── components/       # Shared UI
-│       └── lib/              # API client, utilities
+schemasay/
+├── backend/app/          # FastAPI app, pipeline, AI, security
+├── backend/tests/        # 195 backend tests
+├── frontend/src/         # React workbench
+├── docs/screenshots/     # README images (optional)
 ├── .env.example
-├── docker-compose.yml        # Optional PostgreSQL for platform DB
-└── .github/workflows/ci.yml
+└── docker-compose.yml    # Optional PostgreSQL
 ```
 
 ---
 
-## API overview
+## Security
 
-All routes are under `/api/v1`. Main groups:
+SchemaSay is built for **approved database targets**, not open-ended connectivity.
 
-| Group | Purpose |
-|-------|---------|
-| `/auth` | Register, login, refresh, logout, Google OAuth, current user |
-| `/connections` | CRUD, test, upload, aliases, policies, history |
-| `/schema` | Sync, list, tree view |
-| `/assistant` | Natural-language query, raw SQL execution |
-| `/query` | Direct SQL execute and format |
-| `/insights` | Summaries over result data |
-| `/metrics` | Metric definitions and preview |
-| `/audit` | List, detail, replay |
-| `/feedback` | Submit feedback, fetch learning examples |
+- **SQL gate:** One read-only `SELECT` per request. Writes, stacked statements, `UNION`, and many dangerous patterns are blocked.
+- **Connections:** Remote hosts need an explicit allowlist (`ALLOWED_DB_HOSTS`). SQLite paths are limited to approved directories.
+- **Auth:** JWT access tokens; refresh tokens stored as SHA-256 hashes. Connection passwords encrypted with Fernet.
+- **Limits:** Bounded upload size, query rows/columns, and rate limiting (Redis when `REDIS_URL` is set).
 
-Full interactive docs: `http://localhost:8000/docs`
+Target database accounts should still be **read-only** — app validation is defense in depth, not a substitute for DB permissions.
 
 ---
 
 ## Testing
 
-Backend (195 tests):
+**Backend (195 tests):**
 
-```bash
-# Windows PowerShell
+```powershell
 $env:DATABASE_URL="sqlite:///:memory:"
 $env:SECRET_KEY="test-secret-key-0123456789-0123456789"
 $env:ENCRYPTION_KEY="7c2w6QFqE7d3hK2x5uXvGmYwQ8rTnZpL0sA1bC2dE3f="
 $env:PYTHONPATH="backend"
 python -m pytest -q backend/tests
-
-# macOS / Linux
-# DATABASE_URL=sqlite:///:memory: SECRET_KEY=test-secret-key-0123456789-0123456789 \
-# ENCRYPTION_KEY=7c2w6QFqE7d3hK2x5uXvGmYwQ8rTnZpL0sA1bC2dE3f= \
-# PYTHONPATH=backend pytest -q backend/tests
 ```
 
-Frontend build check:
+**Frontend:**
 
 ```bash
-cd frontend
-npm run build
+cd frontend && npm run build
 ```
 
-Heuristic eval benchmark (offline, no API key needed):
-
-```bash
-python backend/scripts/run_heuristic_eval.py
-```
-
-**Eval results:** [TODO: Add pass rate summary after running the benchmark on your machine]
-
-### CI
-
-GitHub Actions runs on push and pull request:
-
-- Backend: pytest, ruff, bandit, pip-audit, migration check (Python 3.10–3.12)
-- Frontend job: [TODO: Update CI to run `npm run build` — current workflow still targets removed legacy frontend files]
+**CI (GitHub Actions):** pytest, ruff, bandit, pip-audit, Alembic migration check, and `npm run build` on every push and pull request.
 
 ---
 
-## Configuration and limits
+## Troubleshooting
 
-Default resource limits (override via environment variables in `backend/app/config.py`):
-
-| Limit | Default |
-|-------|---------|
-| Upload size | 10 MB |
-| Upload rows / columns | 100,000 / 100 |
-| Query result rows / columns | 10,000 / 200 |
-| Cell size | 32 KiB |
-| Schema metadata entries | 20,000 |
-
-Rate limiting uses Redis when `REDIS_URL` is set. Without Redis, an in-memory limiter is used (fine for single-process local runs).
-
-For production-style deployments, set `ALLOWED_DB_HOSTS` and use read-only credentials on target databases.
+| Problem | Fix |
+|---------|-----|
+| Startup rejects `.env` values | Replace placeholder `SECRET_KEY` and `ENCRYPTION_KEY` with generated values (32+ chars) |
+| `ModuleNotFoundError: app` | Set `PYTHONPATH=backend` before running uvicorn |
+| Frontend cannot reach API | Ensure backend is on port 8000; Vite proxy handles `/api` in dev |
+| SQLite path errors on Windows | Use forward slashes: `sqlite:///C:/path/to/file.db` |
+| Google sign-in fails | Set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and matching redirect URIs |
+| No LLM responses | Expected without API keys — heuristic compiler still works for many questions |
 
 ---
 
 ## Known limitations
 
 - Complex multi-table questions may need manual SQL or schema aliases.
-- Insights work best with an LLM API key; some simple cases use rule-based summaries.
-- Saved queries and recent queries live in browser storage only (not synced to the server).
-- No hosted deployment guide yet — see placeholder below.
+- Insights work best with an LLM key; some cases use rule-based summaries.
+- Saved queries and recent queries are stored in the browser only.
+- Public deployment not set up yet.
 
 ---
 
@@ -296,17 +314,10 @@ For production-style deployments, set `ALLOWED_DB_HOSTS` and use read-only crede
 
 | Status | Item |
 |--------|------|
-| Done | Ask, SQL, Schema, Metrics, Govern, Audit, Connections, auth, aliases, answer-focused feedback |
-| Done | Heuristic compiler, eval harness, audit telemetry |
-| TODO | Public demo deployment |
-| TODO | Updated frontend CI (`npm run build`) |
-| TODO | [Add your next priorities here] |
-
----
-
-## Deployment
-
-[TODO: Add deployment steps when you host this (e.g. Railway, Render, VPS). Include notes on PostgreSQL, Redis, TLS, and `ALLOWED_DB_HOSTS`.]
+| Done | Core product loop (Ask, SQL, Schema, Metrics, Govern, Audit, Connections) |
+| Done | Heuristic compiler, eval harness, audit telemetry, answer-focused feedback |
+| TODO | Live demo deployment |
+| TODO | README screenshots and demo video |
 
 ---
 
@@ -318,8 +329,9 @@ MIT License — see [LICENSE](LICENSE).
 
 ## Author
 
-[TODO: Your name]
+**Krishan Kant Jha**
 
-[TODO: LinkedIn or portfolio link]
+- GitHub: [krishankantjha](https://github.com/krishankantjha)
+- LinkedIn: [TODO: Add your LinkedIn URL]
 
-[TODO: GitHub profile link]
+Contributions welcome — open an issue or pull request.
