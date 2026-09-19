@@ -1,11 +1,12 @@
 import { Moon, Sun } from "lucide-react";
 import { useTheme } from "@/app/ThemeContext";
+import { cn } from "@/lib/utils";
 
 type ThemeToggleProps = {
   className?: string;
 };
 
-export function ThemeToggle({ className = "" }: ThemeToggleProps) {
+export function ThemeToggle({ className }: ThemeToggleProps) {
   const { theme, toggleTheme } = useTheme();
   const isLight = theme === "light";
 
@@ -15,13 +16,24 @@ export function ThemeToggle({ className = "" }: ThemeToggleProps) {
       onClick={toggleTheme}
       aria-label={isLight ? "Switch to dark theme" : "Switch to light theme"}
       title={isLight ? "Switch to dark theme" : "Switch to light theme"}
-      className={[
-        "inline-flex h-7 w-7 items-center justify-center rounded-md",
-        "text-text-muted transition-colors hover:bg-bg-elevated hover:text-text-secondary",
-        className,
-      ].join(" ")}
+      className={cn("icon-btn pressable", className)}
     >
-      {isLight ? <Moon className="h-3.5 w-3.5" /> : <Sun className="h-3.5 w-3.5" />}
+      <span className="relative h-4 w-4">
+        <Sun
+          className={cn(
+            "absolute inset-0 h-4 w-4 transition-opacity duration-200 ease-out",
+            isLight ? "opacity-0" : "opacity-100",
+          )}
+          aria-hidden
+        />
+        <Moon
+          className={cn(
+            "absolute inset-0 h-4 w-4 transition-opacity duration-200 ease-out",
+            isLight ? "opacity-100" : "opacity-0",
+          )}
+          aria-hidden
+        />
+      </span>
     </button>
   );
 }

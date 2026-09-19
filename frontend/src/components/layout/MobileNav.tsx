@@ -1,63 +1,88 @@
-import { useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { NavLink } from "react-router-dom";
 import { Menu, X } from "lucide-react";
-import {
-  Database,
-  LineChart,
-  MessageSquare,
-  ScrollText,
-  Shield,
-  Terminal,
-} from "lucide-react";
-
-const NAV_ITEMS = [
-  { to: "/ask", label: "Ask", icon: MessageSquare },
-  { to: "/sql", label: "SQL", icon: Terminal },
-  { to: "/schema", label: "Schema", icon: Database },
-  { to: "/metrics", label: "Metrics", icon: LineChart },
-  { to: "/govern", label: "Govern", icon: Shield },
-  { to: "/audit", label: "Audit", icon: ScrollText },
-];
+import { NAV_ITEMS } from "@/components/layout/navConfig";
+import { useBodyScrollLock } from "@/hooks/useBodyScrollLock";
+import { useFocusTrap } from "@/hooks/useFocusTrap";
+import { cn } from "@/lib/utils";
 
 export function MobileNav() {
   const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLElement>(null);
+  const panelId = useId();
+
+  useBodyScrollLock(open);
+  useFocusTrap(panelRef, open);
+
+  useEffect(() => {
+    if (!open) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setOpen(false);
+      }
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) triggerRef.current?.focus();
+  }, [open]);
 
   return (
     <div className="md:hidden">
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex h-9 w-9 items-center justify-center rounded-md text-text-secondary hover:bg-bg-elevated"
+        className={cn(
+          "flex h-11 w-11 items-center justify-center rounded-[var(--radius-md)] text-text-secondary",
+          "transition-colors hover:bg-bg-elevated hover:text-text-primary",
+          "focus-ring",
+        )}
         aria-label={open ? "Close menu" : "Open menu"}
         aria-expanded={open}
+        aria-controls={panelId}
       >
-        {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+        {open ? (
+          <X className="h-5 w-5" strokeWidth={2} aria-hidden />
+        ) : (
+          <Menu className="h-5 w-5" strokeWidth={2} aria-hidden />
+        )}
       </button>
 
       {open ? (
         <>
           <button
             type="button"
-            className="fixed inset-0 z-40 bg-bg-overlay"
+            className="fixed inset-0 z-40 bg-bg-overlay/70 motion-safe:animate-overlay-in"
             aria-label="Close menu overlay"
             onClick={() => setOpen(false)}
           />
-          <nav className="fixed inset-y-0 left-0 z-50 w-64 border-r border-border-subtle bg-bg-surface p-4 shadow-md">
+          <nav
+            ref={panelRef}
+            id={panelId}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Mobile navigation"
+            className="fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-border-subtle bg-bg-surface p-[var(--space-sidebar)] shadow-[var(--shadow-dropdown)] motion-safe:animate-drawer-in"
+          >
             {NAV_ITEMS.map(({ to, label, icon: Icon }) => (
               <NavLink
                 key={to}
                 to={to}
                 onClick={() => setOpen(false)}
                 className={({ isActive }) =>
-                  [
-                    "mb-0.5 flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm no-underline",
-                    isActive
-                      ? "bg-accent-muted text-accent"
-                      : "text-text-secondary hover:bg-bg-elevated",
-                  ].join(" ")
+                  cn(
+                    "nav-link mb-0.5 min-h-[44px] gap-2.5 px-3 py-2.5 no-underline",
+                    "focus-ring",
+                    isActive && "nav-link-active",
+                  )
                 }
               >
-                <Icon className="h-4 w-4" />
+                <Icon aria-hidden strokeWidth={2} />
                 {label}
               </NavLink>
             ))}

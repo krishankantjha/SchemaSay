@@ -1,4 +1,6 @@
-type BadgeVariant = "default" | "success" | "warning" | "danger" | "pii" | "accent";
+import { cn } from "@/lib/utils";
+
+type BadgeVariant = "default" | "success" | "warning" | "danger" | "pii" | "accent" | "info";
 
 const variants: Record<BadgeVariant, string> = {
   default: "bg-bg-elevated text-text-secondary border-border-default",
@@ -7,6 +9,7 @@ const variants: Record<BadgeVariant, string> = {
   danger: "bg-[var(--color-danger-muted)] text-danger border-danger/30",
   pii: "bg-[var(--color-pii-muted)] text-pii border-pii/30",
   accent: "bg-accent-muted text-accent border-accent/30",
+  info: "bg-[var(--color-accent-muted)] text-accent border-accent/30",
 };
 
 type BadgeProps = {
@@ -15,14 +18,14 @@ type BadgeProps = {
   className?: string;
 };
 
-export function Badge({ variant = "default", children, className = "" }: BadgeProps) {
+export function Badge({ variant = "default", children, className }: BadgeProps) {
   return (
     <span
-      className={[
-        "inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium",
+      className={cn(
+        "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium leading-none",
         variants[variant],
         className,
-      ].join(" ")}
+      )}
     >
       {children}
     </span>

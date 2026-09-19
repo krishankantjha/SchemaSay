@@ -98,6 +98,13 @@ export type ChartConfig = {
   color_axis?: string | null;
 };
 
+export type ComponentConfidence = {
+  table: number;
+  column: number;
+  join: number;
+  aggregation: number;
+};
+
 export type QueryExplanation = {
   summary: string;
   assumptions: string[];
@@ -115,6 +122,13 @@ export type QueryExplanation = {
   learning_examples_used: number;
   llm_provider?: string | null;
   llm_model?: string | null;
+  heuristic_tier?: string | null;
+  heuristic_intent?: string | null;
+  routing_decision?: string | null;
+  validation_passed?: boolean | null;
+  calibrated_confidence?: number | null;
+  component_confidence?: ComponentConfidence | null;
+  validation_issues?: string[];
 };
 
 export type QueryResponse = {
@@ -135,13 +149,48 @@ export type FeedbackCreate = {
   generated_sql?: string;
   corrected_sql?: string;
   comment?: string;
+  correlation_id?: string;
+  feedback_categories?: string[];
+  result_row_count?: number;
+  result_columns?: string[];
 };
 
 export type FeedbackResponse = {
   id: number;
   connection_id: number;
+  audit_log_id?: number | null;
+  correlation_id?: string | null;
   rating: string;
+  comment?: string | null;
+  feedback_categories?: string[];
+  result_row_count?: number | null;
+  result_columns?: string[];
   created_at: string;
+};
+
+export type SchemaAliasType = "table" | "column";
+
+export type SchemaAlias = {
+  id: number;
+  connection_id: number;
+  alias_type: SchemaAliasType;
+  alias_token: string;
+  target_table: string;
+  target_column: string | null;
+  created_at: string;
+};
+
+export type SchemaAliasCreate = {
+  alias_type: SchemaAliasType;
+  alias_token: string;
+  target_table: string;
+  target_column?: string;
+};
+
+export type SchemaAliasUpdate = {
+  alias_token: string;
+  target_table: string;
+  target_column?: string;
 };
 
 export type ConnectionPolicy = {
@@ -162,6 +211,19 @@ export type ConnectionPolicyUpdate = {
   block_pii_access: boolean;
 };
 
+export type AuditTelemetry = {
+  routing_decision: string | null;
+  validation_passed: boolean | null;
+  calibrated_confidence: number | null;
+  heuristic_intent: string | null;
+  used_llm: boolean;
+  escalation_reason: string | null;
+  false_confidence: boolean;
+  execution_match: boolean | null;
+  validation_issues: string[];
+  component_confidence: Record<string, number> | null;
+};
+
 export type AuditLog = {
   id: number;
   user_id: number;
@@ -178,6 +240,9 @@ export type AuditLog = {
   row_count: number | null;
   resolution_source: string | null;
   metric_id: number | null;
+  heuristic_tier: string | null;
+  heuristic_compile_confidence: number | null;
+  eval_telemetry: AuditTelemetry | null;
   created_at: string;
 };
 

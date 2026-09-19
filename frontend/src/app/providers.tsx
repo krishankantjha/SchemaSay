@@ -1,7 +1,9 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ThemeProvider } from "@/app/ThemeContext";
 import { ToastProvider, ToastViewport } from "@/app/ToastContext";
+import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { AuthProvider } from "@/features/auth/AuthContext";
+import { CommandPaletteProvider } from "@/features/command/CommandPaletteContext";
 import { ConnectionProvider } from "@/features/connections/ConnectionContext";
 
 const queryClient = new QueryClient({
@@ -19,10 +21,12 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
           <ConnectionProvider>
-            <ToastProvider>
-              {children}
-              <ToastViewport />
-            </ToastProvider>
+            <CommandPaletteProvider>
+              <ToastProvider>
+                <ErrorBoundary>{children}</ErrorBoundary>
+                <ToastViewport />
+              </ToastProvider>
+            </CommandPaletteProvider>
           </ConnectionProvider>
         </AuthProvider>
       </QueryClientProvider>

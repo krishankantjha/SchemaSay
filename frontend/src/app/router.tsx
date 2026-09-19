@@ -1,17 +1,38 @@
+import { lazy, Suspense } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { AppShell } from "@/components/layout/AppShell";
+import { RouteFallback } from "@/components/ui/RouteFallback";
 import { LoginPage } from "@/features/auth/LoginPage";
 import { RegisterPage } from "@/features/auth/RegisterPage";
 import { OAuthCallbackPage } from "@/features/auth/OAuthCallbackPage";
 import { ProtectedRoute, PublicOnlyRoute } from "@/features/auth/ProtectedRoute";
-import { ConnectionsPage } from "@/features/connections/ConnectionsPage";
-import { AskPage } from "@/features/workbench/AskPage";
-import { SqlPage } from "@/features/sql/SqlPage";
-import { SchemaPage } from "@/features/schema/SchemaPage";
-import { MetricsPage } from "@/features/metrics/MetricsPage";
-import { GovernPage } from "@/features/govern/GovernPage";
-import { AuditPage } from "@/features/audit/AuditPage";
-import { ThemeShowcasePage } from "@/pages/ThemeShowcasePage";
+
+const AskPage = lazy(() =>
+  import("@/features/workbench/AskPage").then((m) => ({ default: m.AskPage })),
+);
+const SqlPage = lazy(() => import("@/features/sql/SqlPage").then((m) => ({ default: m.SqlPage })));
+const SchemaPage = lazy(() =>
+  import("@/features/schema/SchemaPage").then((m) => ({ default: m.SchemaPage })),
+);
+const MetricsPage = lazy(() =>
+  import("@/features/metrics/MetricsPage").then((m) => ({ default: m.MetricsPage })),
+);
+const GovernPage = lazy(() =>
+  import("@/features/govern/GovernPage").then((m) => ({ default: m.GovernPage })),
+);
+const AuditPage = lazy(() =>
+  import("@/features/audit/AuditPage").then((m) => ({ default: m.AuditPage })),
+);
+const ConnectionsPage = lazy(() =>
+  import("@/features/connections/ConnectionsPage").then((m) => ({ default: m.ConnectionsPage })),
+);
+const ThemeShowcasePage = lazy(() =>
+  import("@/pages/ThemeShowcasePage").then((m) => ({ default: m.ThemeShowcasePage })),
+);
+
+function Lazy({ children }: { children: React.ReactNode }) {
+  return <Suspense fallback={<RouteFallback />}>{children}</Suspense>;
+}
 
 export function AppRouter() {
   return (
@@ -27,14 +48,72 @@ export function AppRouter() {
         <Route element={<ProtectedRoute />}>
           <Route element={<AppShell />}>
             <Route path="/" element={<Navigate to="/ask" replace />} />
-            <Route path="/ask" element={<AskPage />} />
-            <Route path="/sql" element={<SqlPage />} />
-            <Route path="/schema" element={<SchemaPage />} />
-            <Route path="/metrics" element={<MetricsPage />} />
-            <Route path="/govern" element={<GovernPage />} />
-            <Route path="/audit" element={<AuditPage />} />
-            <Route path="/connections" element={<ConnectionsPage />} />
-            <Route path="/dev/theme" element={<ThemeShowcasePage />} />
+            <Route
+              path="/ask"
+              element={
+                <Lazy>
+                  <AskPage />
+                </Lazy>
+              }
+            />
+            <Route
+              path="/sql"
+              element={
+                <Lazy>
+                  <SqlPage />
+                </Lazy>
+              }
+            />
+            <Route
+              path="/schema"
+              element={
+                <Lazy>
+                  <SchemaPage />
+                </Lazy>
+              }
+            />
+            <Route
+              path="/metrics"
+              element={
+                <Lazy>
+                  <MetricsPage />
+                </Lazy>
+              }
+            />
+            <Route
+              path="/govern"
+              element={
+                <Lazy>
+                  <GovernPage />
+                </Lazy>
+              }
+            />
+            <Route
+              path="/audit"
+              element={
+                <Lazy>
+                  <AuditPage />
+                </Lazy>
+              }
+            />
+            <Route
+              path="/connections"
+              element={
+                <Lazy>
+                  <ConnectionsPage />
+                </Lazy>
+              }
+            />
+            {import.meta.env.DEV ? (
+              <Route
+                path="/dev/theme"
+                element={
+                  <Lazy>
+                    <ThemeShowcasePage />
+                  </Lazy>
+                }
+              />
+            ) : null}
           </Route>
         </Route>
 

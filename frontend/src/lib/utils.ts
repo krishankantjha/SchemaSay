@@ -1,3 +1,8 @@
+/** Merge class names, filtering falsy values. */
+export function cn(...classes: (string | false | null | undefined)[]): string {
+  return classes.filter(Boolean).join(" ");
+}
+
 const STORAGE_KEY = "schemasay_active_connection_id";
 
 export function getStoredConnectionId(): number | null {
@@ -26,15 +31,46 @@ export function formatDbType(dbType: string): string {
   return map[dbType] ?? dbType;
 }
 
+export function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+export function formatRelativeTime(isoOrMs: string | number): string {
+  const then = typeof isoOrMs === "number" ? isoOrMs : new Date(isoOrMs).getTime();
+  if (!Number.isFinite(then)) return "";
+  const delta = Date.now() - then;
+  const minute = 60_000;
+  const hour = 60 * minute;
+  const day = 24 * hour;
+  if (delta < minute) return "just now";
+  if (delta < hour) return `${Math.floor(delta / minute)}m ago`;
+  if (delta < day) return `${Math.floor(delta / hour)}h ago`;
+  if (delta < 7 * day) return `${Math.floor(delta / day)}d ago`;
+  return new Date(then).toLocaleDateString();
+}
+
 export function resolutionSourceLabel(source: string | null | undefined): string {
   const map: Record<string, string> = {
-    semantic_metric: "Semantic metric",
-    learning_example: "Learning example",
-    llm: "LLM",
-    heuristic: "Heuristic",
-    raw_sql: "Raw SQL",
+    semantic_metric: "Predefined metric",
+    learning_example: "Similar past query",
+    llm: "AI-assisted",
+    heuristic: "Schema match",
+    raw_sql: "Manual SQL",
   };
   return source ? (map[source] ?? source) : "Unknown";
+}
+
+/** User-facing routing label for Trust panel and audit summaries. */
+export function routingDecisionLabel(decision: string | null | undefined): string {
+  const map: Record<string, string> = {
+    heuristic_execute: "Direct schema match",
+    heuristic_validate: "Schema match with validation",
+    llm: "AI-assisted",
+    fallback: "Schema rules fallback",
+  };
+  return decision ? (map[decision] ?? decision.replace(/_/g, " ")) : "";
 }
 
 export function llmProviderLabel(provider: string | null | undefined): string {

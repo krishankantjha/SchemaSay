@@ -41,12 +41,44 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
     localStorage.setItem(THEME_STORAGE_KEY, theme);
+    const themeColor = theme === "light" ? "#f2f4f8" : "#0a0e17";
+    let meta = document.querySelector('meta[name="theme-color"]');
+    if (!meta) {
+      meta = document.createElement("meta");
+      meta.setAttribute("name", "theme-color");
+      document.head.appendChild(meta);
+    }
+    meta.setAttribute("content", themeColor);
   }, [theme]);
 
-  const setTheme = useCallback((next: Theme) => setThemeState(next), []);
-  const toggleTheme = useCallback(() => {
-    setThemeState((current) => (current === "dark" ? "light" : "dark"));
+  const withThemeTransition = useCallback((apply: () => void) => {
+    if (typeof document === "undefined") {
+      apply();
+      return;
+    }
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduced) {
+      apply();
+      return;
+    }
+    document.documentElement.classList.add("theme-transitioning");
+    apply();
+    window.setTimeout(() => {
+      document.documentElement.classList.remove("theme-transitioning");
+    }, 280);
   }, []);
+
+  const setTheme = useCallback(
+    (next: Theme) => {
+      withThemeTransition(() => setThemeState(next));
+    },
+    [withThemeTransition],
+  );
+  const toggleTheme = useCallback(() => {
+    withThemeTransition(() => {
+      setThemeState((current) => (current === "dark" ? "light" : "dark"));
+    });
+  }, [withThemeTransition]);
 
   const value = useMemo(() => ({ theme, setTheme, toggleTheme }), [theme, setTheme, toggleTheme]);
 

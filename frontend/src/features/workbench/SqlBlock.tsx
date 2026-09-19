@@ -1,53 +1,71 @@
-import { Copy, Check } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
+import { Check, ChevronDown, ChevronRight, Copy, SquareArrowOutUpRight } from "lucide-react";
 import { Button } from "@/components/ui/Button";
-
-const KEYWORDS = new Set([
-  "SELECT", "FROM", "WHERE", "GROUP", "BY", "ORDER", "HAVING", "JOIN", "LEFT", "RIGHT",
-  "INNER", "OUTER", "ON", "AS", "AND", "OR", "NOT", "IN", "LIMIT", "OFFSET", "DISTINCT",
-  "SUM", "COUNT", "AVG", "MIN", "MAX", "CASE", "WHEN", "THEN", "ELSE", "END",
-]);
-
-function highlightSql(sql: string): string {
-  const tokens = sql.split(/(\s+|[(),.*;=<>!]+)/);
-  return tokens
-    .map((token) => {
-      const upper = token.toUpperCase();
-      if (KEYWORDS.has(upper)) return `<span class="kw">${token}</span>`;
-      if (/^'.*'$/.test(token) || /^".*"$/.test(token)) return `<span class="str">${token}</span>`;
-      if (/^\d+(\.\d+)?$/.test(token)) return `<span class="fn">${token}</span>`;
-      return token;
-    })
-    .join("");
-}
+import { highlightSql } from "@/lib/sql-highlight";
+import { cn } from "@/lib/utils";
 
 type SqlBlockProps = {
   sql: string;
+  defaultCollapsed?: boolean;
 };
 
-export function SqlBlock({ sql }: SqlBlockProps) {
+export function SqlBlock({ sql, defaultCollapsed = false }: SqlBlockProps) {
   const [copied, setCopied] = useState(false);
+  const [collapsed, setCollapsed] = useState(defaultCollapsed);
+  const lineCount = sql.split("\n").length;
+
+  useEffect(() => {
+    setCollapsed(defaultCollapsed);
+  }, [sql, defaultCollapsed]);
 
   async function copy() {
     await navigator.clipboard.writeText(sql);
     setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    window.setTimeout(() => setCopied(false), 2000);
   }
 
   return (
-    <div className="relative">
-      <div className="mb-1 flex items-center justify-between">
-        <span className="text-xs font-medium uppercase tracking-wide text-text-secondary">
+    <div className="overflow-hidden rounded-[var(--radius-md)] border border-border-subtle bg-bg-surface">
+      <div className="flex items-center justify-between gap-2 border-b border-border-subtle px-3 py-1.5">
+        <button
+          type="button"
+          onClick={() => setCollapsed((v) => !v)}
+          aria-expanded={!collapsed}
+          className="flex min-h-[36px] items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-text-secondary transition-colors duration-150 hover:text-text-primary"
+        >
+          {collapsed ? (
+            <ChevronRight className="h-3.5 w-3.5" aria-hidden />
+          ) : (
+            <ChevronDown className="h-3.5 w-3.5" aria-hidden />
+          )}
           Generated SQL
-        </span>
-        <Button variant="ghost" size="sm" onClick={() => void copy()}>
-          {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-          {copied ? "Copied" : "Copy"}
-        </Button>
+          <span className="font-normal normal-case tracking-normal text-text-muted">
+            {lineCount} line{lineCount === 1 ? "" : "s"}
+          </span>
+        </button>
+        <div className="flex items-center gap-1">
+          <Link
+            to="/sql"
+            state={{ sql }}
+            className="inline-flex min-h-[36px] items-center gap-1 rounded-[var(--radius-md)] px-2 text-xs text-text-secondary no-underline hover:text-text-primary"
+          >
+            <SquareArrowOutUpRight className="h-3.5 w-3.5" aria-hidden />
+            Editor
+          </Link>
+          <Button variant="ghost" size="sm" onClick={() => void copy()} aria-label="Copy SQL">
+            {copied ? <Check className="h-3.5 w-3.5" aria-hidden /> : <Copy className="h-3.5 w-3.5" aria-hidden />}
+            {copied ? "Copied" : "Copy"}
+          </Button>
+        </div>
       </div>
-      <pre className="sql-block max-h-48 overflow-auto">
-        <code dangerouslySetInnerHTML={{ __html: highlightSql(sql) }} />
-      </pre>
+      {!collapsed ? (
+        <pre className={cn("sql-block max-h-56 overflow-auto rounded-none border-0 animate-reveal")}>
+          <code dangerouslySetInnerHTML={{ __html: highlightSql(sql) }} />
+        </pre>
+      ) : (
+        <p className="truncate px-3 py-2 font-mono text-[11px] text-text-muted">{sql.replace(/\s+/g, " ")}</p>
+      )}
     </div>
   );
 }

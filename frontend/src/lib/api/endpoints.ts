@@ -8,6 +8,9 @@ import type {
   ConnectionTestResponse,
   ConnectionPolicy,
   ConnectionPolicyUpdate,
+  SchemaAlias,
+  SchemaAliasCreate,
+  SchemaAliasUpdate,
   FeedbackCreate,
   FeedbackResponse,
   FormatQueryResponse,
@@ -70,6 +73,26 @@ export const connectionsApi = {
     apiRequest<ConnectionPolicy>(`/connections/${connectionId}/policy`, {
       method: "PUT",
       body: payload,
+    }),
+
+  listAliases: (connectionId: number) =>
+    apiRequest<SchemaAlias[]>(`/connections/${connectionId}/aliases`),
+
+  createAlias: (connectionId: number, payload: SchemaAliasCreate) =>
+    apiRequest<SchemaAlias>(`/connections/${connectionId}/aliases`, {
+      method: "POST",
+      body: payload,
+    }),
+
+  updateAlias: (connectionId: number, aliasId: number, payload: SchemaAliasUpdate) =>
+    apiRequest<SchemaAlias>(`/connections/${connectionId}/aliases/${aliasId}`, {
+      method: "PUT",
+      body: payload,
+    }),
+
+  deleteAlias: (connectionId: number, aliasId: number) =>
+    apiRequest<{ message: string }>(`/connections/${connectionId}/aliases/${aliasId}`, {
+      method: "DELETE",
     }),
 };
 

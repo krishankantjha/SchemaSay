@@ -2,6 +2,9 @@ import { Link } from "react-router-dom";
 import { Database } from "lucide-react";
 import { useConnection } from "@/features/connections/ConnectionContext";
 import { Button } from "@/components/ui/Button";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { PageShell } from "@/components/ui/PageShell";
+import { SkeletonLines } from "@/components/ui/Skeleton";
 
 type ConnectionRequiredProps = {
   children: React.ReactNode;
@@ -12,21 +15,29 @@ export function ConnectionRequired({ children, title = "Connect a database" }: C
   const { activeConnectionId, isLoading } = useConnection();
 
   if (isLoading) {
-    return <p className="text-sm text-text-muted">Loading connections…</p>;
+    return (
+      <PageShell>
+        <div className="py-6" role="status" aria-label="Loading connections">
+          <SkeletonLines lines={3} />
+        </div>
+      </PageShell>
+    );
   }
 
   if (!activeConnectionId) {
     return (
-      <div className="flex min-h-[50vh] flex-col items-center justify-center text-center">
-        <Database className="mb-3 h-10 w-10 text-accent" />
-        <h1 className="text-xl font-semibold text-text-primary">{title}</h1>
-        <p className="mt-2 max-w-md text-sm text-text-secondary">
-          Select or create a connection first, then sync your schema.
-        </p>
-        <Link to="/connections" className="mt-4">
-          <Button>Go to Connections</Button>
-        </Link>
-      </div>
+      <PageShell>
+        <EmptyState
+          icon={Database}
+          title={title}
+          description="Select or create a connection first, then sync your schema."
+          action={
+            <Link to="/connections" className="no-underline">
+              <Button>Go to Connections</Button>
+            </Link>
+          }
+        />
+      </PageShell>
     );
   }
 

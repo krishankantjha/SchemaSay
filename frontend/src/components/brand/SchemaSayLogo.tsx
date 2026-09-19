@@ -1,39 +1,52 @@
-import { LayoutDashboard } from "lucide-react";
+import darkLogoUrl from "../../../assets/dark_logo.png";
+import lightLogoUrl from "../../../assets/light_logo.png";
+import { useTheme } from "@/app/ThemeContext";
+import { cn } from "@/lib/utils";
 
 type SchemaSayLogoProps = {
   size?: "sm" | "md" | "lg";
+  /** @deprecated Logo asset includes full wordmark; kept for call-site compatibility */
   showTagline?: boolean;
   className?: string;
 };
 
-const sizeMap = {
-  sm: { icon: "h-4 w-4", name: "text-sm", tagline: "text-[11px]" },
-  md: { icon: "h-5 w-5", name: "text-sm", tagline: "text-xs" },
-  lg: { icon: "h-6 w-6", name: "text-base", tagline: "text-sm" },
-};
+/** dark_logo.png / light_logo.png intrinsic dimensions */
+const LOGO_INTRINSIC = { width: 1983, height: 793 } as const;
+const LOGO_ASPECT = LOGO_INTRINSIC.width / LOGO_INTRINSIC.height;
+
+/**
+ * Display heights tuned per surface (+4.5% over base):
+ * - sm (36px): TopNav + auth mobile header — fits 64px nav bar
+ * - md (38px): default / medium contexts
+ * - lg (54px): auth visual panel hero branding
+ */
+const sizePx = {
+  sm: 36,
+  md: 38,
+  lg: 54,
+} as const;
 
 export function SchemaSayLogo({
   size = "md",
-  showTagline = false,
-  className = "",
+  className,
 }: SchemaSayLogoProps) {
-  const s = sizeMap[size];
+  const { theme } = useTheme();
+  const height = sizePx[size];
+  const width = Math.round(height * LOGO_ASPECT);
+  const logoUrl = theme === "dark" ? darkLogoUrl : lightLogoUrl;
 
   return (
-    <div className={["flex items-center gap-2.5", className].join(" ")}>
-      <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-border-subtle bg-bg-elevated/80">
-        <LayoutDashboard className={`${s.icon} text-accent`} aria-hidden />
-      </div>
-      <div>
-        <span className={`block font-semibold tracking-tight text-text-primary ${s.name}`}>
-          SchemaSay
-        </span>
-        {showTagline ? (
-          <span className={`block text-text-secondary ${s.tagline}`}>
-            Ask your data in plain English
-          </span>
-        ) : null}
-      </div>
+    <div className={cn("w-fit max-w-none shrink-0 self-start", className)}>
+      <img
+        src={logoUrl}
+        alt="SchemaSay"
+        width={width}
+        height={height}
+        draggable={false}
+        decoding="async"
+        className="brand-logo block max-w-none select-none object-contain object-left"
+        style={{ width, height }}
+      />
     </div>
   );
 }

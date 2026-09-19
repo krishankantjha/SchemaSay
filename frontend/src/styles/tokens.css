@@ -1,124 +1,259 @@
 :root {
   /* ============================================================
-     Dark theme — Warm Obsidian (default)
+     Phase 1 — Design System (Cool Navy, default dark)
      ============================================================ */
 
-  /* Surfaces — slightly brighter, less void */
-  --color-bg-base: #121110;
-  --color-bg-surface: #1a1917;
-  --color-bg-elevated: #232120;
-  --color-bg-overlay: rgba(15, 14, 12, 0.78);
+  /* --- Surfaces (cool dark navy, not brown-gray) --- */
+  --color-bg-base: #0a0e17;
+  --color-bg-surface: #121a2e;
+  --color-bg-elevated: #1a2340;
+  --color-bg-overlay: rgba(8, 12, 22, 0.86);
 
-  /* Borders */
-  --color-border-subtle: #2a2826;
-  --color-border-default: #363432;
+  /* --- Borders (subtle but consistently visible) --- */
+  --color-border-subtle: #252d42;
+  --color-border-default: #323b52;
   --color-border-focus: #2dd4bf;
+  --border-width: 1px;
 
-  /* Text */
-  --color-text-primary: #f5f2ed;
-  --color-text-secondary: #a8a29e;
-  --color-text-muted: #78716c;
-  --color-text-inverse: #0f0e0c;
+  /* --- Text (stronger secondary/muted contrast) --- */
+  --color-text-primary: #eef1f8;
+  --color-text-secondary: #c8ccd6;
+  --color-text-muted: #a3a9b6;
+  --color-text-inverse: #0a0e17;
 
-  /* Brand — cyan/teal primary */
+  /* --- Teal — actions, trust, validation, success --- */
   --color-accent: #2dd4bf;
-  --color-accent-hover: #14b8a6;
-  --color-accent-muted: rgba(45, 212, 191, 0.1);
-  --shadow-accent-glow: 0 1px 2px rgba(45, 212, 191, 0.08);
+  --color-accent-hover: #26c4aa;
+  --color-accent-muted: rgba(45, 212, 191, 0.12);
+  --color-accent-subtle: rgba(45, 212, 191, 0.06);
+  --color-on-accent: #0a0e17;
+  --shadow-accent-glow: 0 1px 2px rgba(45, 212, 191, 0.1);
 
-  /* AI / insight accent — purple */
-  --color-ai: #a78bfa;
-  --color-ai-muted: rgba(167, 139, 250, 0.12);
+  /* --- Purple — branding, AI, intelligence only --- */
+  --color-brand: #9180ee;
+  --color-brand-muted: rgba(145, 128, 238, 0.12);
+  --color-ai: var(--color-brand);
+  --color-ai-muted: var(--color-brand-muted);
+  --color-pii: var(--color-brand);
+  --color-pii-muted: var(--color-brand-muted);
 
-  /* Semantic — amber for warnings only */
-  --color-success: #4ade80;
-  --color-success-muted: rgba(74, 222, 128, 0.1);
-  --color-warning: #fbbf24;
-  --color-warning-muted: rgba(251, 191, 36, 0.1);
-  --color-danger: #f87171;
-  --color-danger-muted: rgba(248, 113, 113, 0.1);
-  --color-info: #38bdf8;
-  --color-pii: #c084fc;
-  --color-pii-muted: rgba(192, 132, 252, 0.1);
+  /* --- Semantic (restrained palette) --- */
+  --color-success: #2dd4bf;
+  --color-success-muted: var(--color-accent-muted);
+  --color-warning: #e5b84a;
+  --color-warning-muted: rgba(229, 184, 74, 0.1);
+  --color-danger: #f07178;
+  --color-danger-muted: rgba(240, 113, 120, 0.1);
+  --color-info: #2dd4bf;
+  --color-info-muted: var(--color-accent-muted);
 
-  /* SQL syntax */
+  /* --- Interactive states --- */
+  --state-hover-overlay: rgba(255, 255, 255, 0.04);
+  --state-focus-ring: var(--color-accent-muted);
+  --state-error-border: var(--color-danger);
+  --state-error-ring: var(--color-danger-muted);
+  --state-success-border: var(--color-success);
+  --state-success-ring: var(--color-success-muted);
+
+  /* --- SQL syntax (editor only) --- */
   --color-sql-keyword: #67e8f9;
-  --color-sql-string: #86efac;
-  --color-sql-function: #fcd34d;
-  --color-sql-comment: #78716c;
+  --color-sql-string: #6ee7b7;
+  --color-sql-function: #e5c76b;
+  --color-sql-comment: var(--color-text-muted);
 
-  /* Charts */
+  /* --- Charts (teal + purple + neutral) --- */
   --color-chart-1: #2dd4bf;
-  --color-chart-2: #38bdf8;
-  --color-chart-3: #a78bfa;
-  --color-chart-4: #fbbf24;
+  --color-chart-2: #5eead4;
+  --color-chart-3: var(--color-brand);
+  --color-chart-4: #e5b84a;
 
-  /* Radius — standardized 8–12px */
+  /* --- Typography scale --- */
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-base: 0.9375rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.25rem;
+  --text-2xl: 1.5rem;
+  --text-3xl: 1.875rem;
+  --leading-tight: 1.25;
+  --leading-normal: 1.6;
+  --leading-relaxed: 1.75;
+  --tracking-tight: -0.01em;
+  --tracking-wide: 0.04em;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+
+  /* --- 4-level typography hierarchy --- */
+  /* Level 1 — Display: page titles, hero headings */
+  --type-display-size: var(--text-xl);
+  --type-display-weight: var(--font-weight-semibold);
+  --type-display-leading: var(--leading-tight);
+  --type-display-tracking: var(--tracking-tight);
+  --type-display-color: var(--color-text-primary);
+
+  /* Level 2 — Heading: section titles, card titles */
+  --type-heading-size: var(--text-sm);
+  --type-heading-weight: var(--font-weight-semibold);
+  --type-heading-leading: var(--leading-tight);
+  --type-heading-tracking: var(--tracking-tight);
+  --type-heading-color: var(--color-text-primary);
+
+  /* Level 3 — Body: content, labels, descriptions */
+  --type-body-size: var(--text-sm);
+  --type-body-weight: var(--font-weight-medium);
+  --type-body-leading: var(--leading-normal);
+  --type-body-color: var(--color-text-secondary);
+
+  /* Level 4 — Meta: captions, overlines, table headers */
+  --type-meta-size: var(--text-xs);
+  --type-meta-weight: var(--font-weight-medium);
+  --type-meta-leading: var(--leading-normal);
+  --type-meta-tracking: var(--tracking-wide);
+  --type-meta-color: var(--color-text-muted);
+
+  /* --- Radius (standardized: md for controls, cards, panels) --- */
   --radius-sm: 6px;
   --radius-md: 8px;
-  --radius-lg: 10px;
-  --radius-xl: 12px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-full: 9999px;
 
-  /* Spacing scale */
-  --space-page: 28px;
-  --space-card: 20px;
-  --space-section: 28px;
-  --control-height: 44px;
+  /* --- Spacing scale --- */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-page: 1.5rem;
+  --space-card: 1.25rem;
+  --space-section: 1.5rem;
+  --space-stack-sm: 0.5rem;
+  --space-stack-md: 0.75rem;
+  --space-stack-lg: 1rem;
 
-  /* Shadows — subtle glass */
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.12);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.15);
+  /* --- Layout spacing (navbar, sidebar, content alignment) --- */
+  --space-layout-x: 1.5rem;
+  --space-layout-y: 1rem;
+  --space-nav-height: 4rem;
+  --space-nav-gap: 0.375rem;
+  --space-nav-link-x: 0.875rem;
+  --space-nav-link-y: 0.5625rem;
+
+  /* --- Workbench 3-panel layout --- */
+  --workbench-side-width: 15rem;
+  --workbench-side-width-lg: 16.25rem;
+  --workbench-trust-width: 17.5rem;
+  --space-sidebar: 1rem;
+  --space-content-gap: 1.5rem;
+
+  /* --- Auth layout --- */
+  --auth-panel-padding: var(--space-page);
+  --auth-card-max-width: 26rem;
+  --auth-grid-opacity: 0.05;
+
+  /* --- Controls --- */
+  --control-height-sm: 32px;
+  --control-height: 36px;
+  --control-height-lg: 44px;
+
+  /* --- Icons (consistent size + stroke) --- */
+  --icon-size-sm: 14px;
+  --icon-size-md: 16px;
+  --icon-size-lg: 20px;
+  --icon-stroke: 2;
+
+  /* --- Shadows (subtle, uniform) --- */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.16);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.2);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.24);
   --shadow-glass: 0 1px 0 rgba(255, 255, 255, 0.04) inset;
+  --shadow-dropdown: 0 8px 24px rgba(0, 0, 0, 0.28), 0 0 0 1px rgba(255, 255, 255, 0.04);
 
-  /* Motion */
+  /* --- Motion --- */
   --duration-fast: 150ms;
-  --duration-normal: 250ms;
+  --duration-normal: 200ms;
+  --duration-slow: 320ms;
   --ease-default: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* --- Nav states --- */
+  --nav-active-bg: color-mix(in srgb, var(--color-accent) 9%, var(--color-bg-elevated));
+  --nav-active-text: var(--color-accent);
+  --nav-active-border: color-mix(in srgb, var(--color-accent) 24%, transparent);
+  --nav-inactive-text: var(--color-text-secondary);
+  --nav-hover-bg: var(--color-bg-elevated);
+  --nav-hover-text: var(--color-text-primary);
 }
 
 /* ============================================================
-   Light theme — designed, not inverted
+   Light theme — Cool Navy companion (designed, not inverted)
    ============================================================ */
 :root[data-theme="light"] {
-  --color-bg-base: #faf9f7;
+  --color-bg-base: #f2f4f8;
   --color-bg-surface: #ffffff;
-  --color-bg-elevated: #f3f1ee;
-  --color-bg-overlay: rgba(255, 255, 255, 0.82);
+  --color-bg-elevated: #e8ecf4;
+  --color-bg-overlay: rgba(255, 255, 255, 0.9);
 
-  --color-border-subtle: #e7e5e4;
-  --color-border-default: #d6d3d1;
+  --color-border-subtle: #d8deea;
+  --color-border-default: #c4ccdc;
   --color-border-focus: #0d9488;
 
-  --color-text-primary: #1c1917;
-  --color-text-secondary: #57534e;
-  --color-text-muted: #a8a29e;
-  --color-text-inverse: #faf9f7;
+  --color-text-primary: #0f1524;
+  --color-text-secondary: #353e55;
+  --color-text-muted: #4f5869;
+  --color-text-inverse: #f8fafc;
 
   --color-accent: #0d9488;
   --color-accent-hover: #0f766e;
-  --color-accent-muted: rgba(13, 148, 136, 0.08);
-  --shadow-accent-glow: 0 1px 2px rgba(13, 148, 136, 0.06);
+  --color-accent-muted: rgba(13, 148, 136, 0.1);
+  --color-accent-subtle: rgba(13, 148, 136, 0.05);
+  --color-on-accent: #ffffff;
+  --shadow-accent-glow: 0 1px 2px rgba(13, 148, 136, 0.08);
 
-  --color-ai: #7c3aed;
-  --color-ai-muted: rgba(124, 58, 237, 0.08);
+  --color-brand: #7c3aed;
+  --color-brand-muted: rgba(124, 58, 237, 0.08);
+  --color-ai: var(--color-brand);
+  --color-ai-muted: var(--color-brand-muted);
+  --color-pii: var(--color-brand);
+  --color-pii-muted: var(--color-brand-muted);
 
-  --color-success: #16a34a;
-  --color-success-muted: rgba(22, 163, 74, 0.08);
-  --color-warning: #d97706;
-  --color-warning-muted: rgba(217, 119, 6, 0.08);
+  --color-success: #0d9488;
+  --color-success-muted: var(--color-accent-muted);
+  --color-warning: #c27803;
+  --color-warning-muted: rgba(194, 120, 3, 0.08);
   --color-danger: #dc2626;
   --color-danger-muted: rgba(220, 38, 38, 0.08);
-  --color-info: #0284c7;
-  --color-pii: #9333ea;
-  --color-pii-muted: rgba(147, 51, 234, 0.08);
+  --color-info: #0d9488;
+  --color-info-muted: var(--color-accent-muted);
+
+  --state-hover-overlay: rgba(15, 21, 36, 0.04);
+  --state-focus-ring: var(--color-accent-muted);
+  --state-error-border: var(--color-danger);
+  --state-error-ring: var(--color-danger-muted);
+  --state-success-border: var(--color-success);
+  --state-success-ring: var(--color-success-muted);
 
   --color-sql-keyword: #0e7490;
   --color-sql-string: #15803d;
   --color-sql-function: #b45309;
-  --color-sql-comment: #a8a29e;
+  --color-sql-comment: var(--color-text-muted);
 
   --color-chart-1: #0d9488;
-  --color-chart-2: #0284c7;
-  --color-chart-3: #7c3aed;
-  --color-chart-4: #d97706;
+  --color-chart-2: #14b8a6;
+  --color-chart-3: var(--color-brand);
+  --color-chart-4: #c27803;
+
+  --shadow-sm: 0 1px 2px rgba(15, 21, 36, 0.06);
+  --shadow-md: 0 4px 12px rgba(15, 21, 36, 0.08);
+  --shadow-lg: 0 8px 24px rgba(15, 21, 36, 0.1);
+  --shadow-dropdown: 0 8px 24px rgba(15, 21, 36, 0.12), 0 0 0 1px rgba(15, 21, 36, 0.06);
+
+  --nav-active-bg: color-mix(in srgb, var(--color-accent) 8%, var(--color-bg-elevated));
+  --nav-active-text: var(--color-accent);
+  --nav-active-border: color-mix(in srgb, var(--color-accent) 22%, transparent);
+  --nav-inactive-text: var(--color-text-secondary);
+  --nav-hover-bg: var(--color-bg-elevated);
+  --nav-hover-text: var(--color-text-primary);
 }

@@ -1,6 +1,6 @@
 import { useMemo, useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ArrowRight, CheckCircle2, Loader2, Lock, Mail, User } from "lucide-react";
+import { ArrowRight, CheckCircle2, Lock, Mail, User } from "lucide-react";
 import { ApiError } from "@/lib/api/client";
 import {
   isValidEmail,
@@ -12,6 +12,7 @@ import { AuthCard } from "@/features/auth/AuthCard";
 import { AuthLayout } from "@/features/auth/AuthLayout";
 import { GoogleButton } from "@/features/auth/GoogleButton";
 import { OrDivider } from "@/features/auth/OrDivider";
+import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
 import { IconInput } from "@/components/ui/IconInput";
 import { Label } from "@/components/ui/Label";
@@ -30,6 +31,7 @@ export function RegisterPage() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [touched, setTouched] = useState<Partial<Record<FieldKey, boolean>>>({});
+  const [passwordFocused, setPasswordFocused] = useState(false);
   const [formError, setFormError] = useState("");
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -110,10 +112,10 @@ export function RegisterPage() {
         }}
       >
         <AuthCard>
-          <div className="flex flex-col items-center py-6 text-center animate-fade-up">
-            <CheckCircle2 className="h-12 w-12 text-success" />
-            <h1 className="mt-4 text-xl font-semibold text-text-primary">Account created</h1>
-            <p className="mt-2 text-sm text-text-secondary">Redirecting to your workspace…</p>
+          <div className="flex flex-col items-center py-[var(--space-6)] text-center animate-fade-up">
+            <CheckCircle2 className="h-12 w-12 text-success" strokeWidth={1.75} aria-hidden />
+            <h1 className="auth-card-title mt-[var(--space-4)]">Account created</h1>
+            <p className="auth-card-desc">Redirecting to your workspace…</p>
           </div>
         </AuthCard>
       </AuthLayout>
@@ -131,14 +133,15 @@ export function RegisterPage() {
     >
       <AuthCard>
         <div className="animate-fade-up">
-          <h1 className="text-xl font-semibold text-text-primary sm:text-2xl">
-            Create your workspace
-          </h1>
-          <p className="mt-1.5 text-sm leading-relaxed text-text-secondary">
-            Free to start — no credit card required.
-          </p>
+          <h1 className="auth-card-title">Create your workspace</h1>
+          <p className="auth-card-desc">Free to start — no credit card required.</p>
 
-          <form onSubmit={(e) => void handleSubmit(e)} className="mt-6 space-y-4">
+          <form
+            onSubmit={(e) => void handleSubmit(e)}
+            className="mt-[var(--space-6)] space-y-[var(--space-4)]"
+            aria-busy={loading || undefined}
+            noValidate
+          >
             <div>
               <Label htmlFor="fullName">Full name</Label>
               <IconInput
@@ -177,13 +180,17 @@ export function RegisterPage() {
                 autoComplete="new-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                onBlur={() => touch("password")}
+                onFocus={() => setPasswordFocused(true)}
+                onBlur={() => {
+                  touch("password");
+                  setPasswordFocused(false);
+                }}
                 icon={<Lock className="h-4 w-4" />}
                 error={fieldErrors.password}
                 success={touched.password && passwordValid}
                 required
               />
-              <PasswordStrength password={password} />
+              <PasswordStrength password={password} focused={passwordFocused} />
             </div>
 
             <div>
@@ -212,39 +219,27 @@ export function RegisterPage() {
                   checked={acceptedTerms}
                   onChange={(e) => setAcceptedTerms(e.target.checked)}
                   onBlur={() => touch("terms")}
+                  id="terms"
+                  aria-describedby={fieldErrors.terms ? "terms-error" : undefined}
                   className="mt-0.5 h-4 w-4 rounded border-border-default accent-accent"
                 />
                 <span>
-                  I agree to the{" "}
-                  <a href="#" className="text-accent hover:text-accent-hover">
-                    Terms
-                  </a>{" "}
-                  and{" "}
-                  <a href="#" className="text-accent hover:text-accent-hover">
-                    Privacy Policy
-                  </a>
+                  I agree to the Terms of Service and Privacy Policy
                 </span>
               </label>
               {fieldErrors.terms ? (
-                <p className="mt-1.5 text-xs text-danger" role="alert">
+                <p id="terms-error" className="mt-1.5 text-xs text-danger" role="alert">
                   {fieldErrors.terms}
                 </p>
               ) : null}
             </div>
 
             {formError ? (
-              <p className="text-sm text-danger" role="alert">
-                {formError}
-              </p>
+              <Alert variant="danger">{formError}</Alert>
             ) : null}
 
-            <Button type="submit" size="lg" className="w-full" disabled={loading}>
-              {loading ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-                  Creating account…
-                </>
-              ) : (
+            <Button type="submit" size="lg" className="w-full" disabled={loading} loading={loading}>
+              {loading ? "Creating account…" : (
                 <>
                   Create your account <ArrowRight className="h-4 w-4" aria-hidden />
                 </>
@@ -253,9 +248,9 @@ export function RegisterPage() {
           </form>
 
           <OrDivider />
-          <GoogleButton label="Sign up with Google" />
+          <GoogleButton label="Sign up with Google" disabled={loading} />
 
-          <p className="mt-5 text-center text-sm text-text-secondary">
+          <p className="mt-[var(--space-5)] text-center text-sm text-text-secondary">
             Already have an account?{" "}
             <Link to="/login" className="font-medium text-accent hover:text-accent-hover">
               Sign in

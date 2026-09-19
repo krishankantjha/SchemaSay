@@ -1,6 +1,9 @@
 import { Outlet, useLocation } from "react-router-dom";
 import { TopNav } from "./TopNav";
+import { SkipLink } from "@/components/ui/SkipLink";
+import { GlobalShortcuts } from "@/features/command/GlobalShortcuts";
 import { OnboardingBanner, SchemaStatusBar } from "@/features/onboarding/OnboardingBanner";
+import { cn } from "@/lib/utils";
 
 const WORKBENCH_PATHS = ["/ask", "/sql"];
 
@@ -11,20 +14,26 @@ export function AppShell() {
 
   return (
     <div className="flex min-h-screen flex-col bg-bg-base">
+      <SkipLink />
+      <GlobalShortcuts />
       <TopNav />
       <main
-        className={[
+        id="main-content"
+        tabIndex={-1}
+        className={cn(
           "mx-auto flex w-full max-w-[1600px] flex-1 flex-col",
-          isWorkbench ? "min-h-0 px-0 py-3 sm:py-4" : "px-4 py-6 sm:px-6 sm:py-7",
-        ].join(" ")}
+          isWorkbench
+            ? "min-h-0 px-0 py-[var(--space-layout-y)]"
+            : "px-[var(--space-layout-x)] py-[var(--space-page)]",
+        )}
       >
         {!hideOnboarding ? (
-          <div className={isWorkbench ? "shrink-0 px-4 sm:px-6" : undefined}>
+          <div className={cn("space-y-3", isWorkbench && "shrink-0 px-[var(--space-layout-x)]")}>
             <OnboardingBanner />
             <SchemaStatusBar />
           </div>
         ) : null}
-        <div className={isWorkbench ? "flex min-h-0 flex-1 flex-col" : undefined}>
+        <div className={cn(isWorkbench && "flex min-h-0 flex-1 flex-col")}>
           <Outlet />
         </div>
       </main>

@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { Link } from "react-router-dom";
 import { CheckCircle2, Lock } from "lucide-react";
 import { SchemaSayLogo } from "@/components/brand/SchemaSayLogo";
 import { QueryTrustDemo } from "@/features/auth/QueryTrustDemo";
@@ -23,50 +24,50 @@ export function AuthVisualPanel({
   features = DEFAULT_FEATURES,
 }: AuthVisualPanelProps) {
   return (
-    <div className="relative hidden min-h-screen overflow-hidden border-r border-border-subtle bg-bg-surface lg:flex lg:flex-col">
+    <div className="relative hidden h-full min-h-0 overflow-hidden border-r border-border-subtle bg-bg-surface lg:flex lg:flex-col">
       <div
         aria-hidden
-        className="pointer-events-none absolute -left-20 -top-20 h-72 w-72 rounded-full bg-accent/10 blur-3xl"
+        className="pointer-events-none absolute -left-20 -top-20 h-72 w-72 rounded-full bg-[var(--color-accent-subtle)] blur-3xl"
       />
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-0 opacity-[0.18]"
-        style={{
-          backgroundImage:
-            "linear-gradient(var(--color-border-subtle) 1px, transparent 1px), linear-gradient(90deg, var(--color-border-subtle) 1px, transparent 1px)",
-          backgroundSize: "40px 40px",
-          maskImage: "radial-gradient(ellipse 70% 55% at 45% 35%, black 15%, transparent 70%)",
-        }}
-      />
+      <div aria-hidden className="auth-grid-bg" />
 
-      <div className="relative z-10 flex min-h-0 flex-1 flex-col justify-center px-8 py-8 xl:px-12 xl:py-10">
-        <SchemaSayLogo size="lg" showTagline className="mb-10" />
+      <div className="auth-visual-scroll relative z-10 flex min-h-0 flex-1 flex-col px-[var(--auth-panel-padding)] py-[var(--space-5)]">
+        <Link
+          to="/ask"
+          aria-label="SchemaSay home"
+          className="focus-ring mb-[var(--space-5)] inline-flex w-fit rounded-[var(--radius-md)] no-underline"
+        >
+          <SchemaSayLogo size="lg" />
+        </Link>
 
-        <p className="text-sm font-medium text-accent">{eyebrow}</p>
-        <h2 className="mt-2 max-w-md text-2xl font-semibold leading-snug tracking-tight text-text-primary xl:text-3xl">
-          {headline}
-        </h2>
-        <p className="mt-3 max-w-sm text-sm leading-relaxed text-text-secondary">{subtext}</p>
+        <div className="shrink-0">
+          <p className="auth-eyebrow">{eyebrow}</p>
+          <h2 className="auth-headline">{headline}</h2>
+          <p className="auth-subtext">{subtext}</p>
+        </div>
 
-        <div className="mt-8">
+        <div className="mt-[var(--space-4)] min-h-0 shrink">
           <QueryTrustDemo />
         </div>
 
-        <ul className="mt-8 space-y-2">
-          {features.map((feature) => (
-            <li key={feature} className="flex items-center gap-2 text-sm text-text-secondary">
-              <CheckCircle2 className="h-4 w-4 shrink-0 text-accent" />
-              {feature}
-            </li>
-          ))}
-        </ul>
+        <div className="mt-auto shrink-0 pt-[var(--space-4)]">
+          <ul className="auth-feature-list auth-feature-list-compact">
+            {features.map((feature) => (
+              <li key={feature} className="auth-feature-item">
+                <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-accent" strokeWidth={2} aria-hidden />
+                {feature}
+              </li>
+            ))}
+          </ul>
 
-        <div className="mt-8 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-text-muted">
-          <span className="flex items-center gap-1">
-            <Lock className="h-3 w-3 text-accent" /> Encrypted connections
-          </span>
-          <span>Read-only queries</span>
-          <span>Schema-aware generation</span>
+          <div className="mt-[var(--space-3)] flex flex-wrap items-center gap-x-[var(--space-3)] gap-y-1 text-[11px] text-text-muted">
+            <span className="inline-flex items-center gap-1">
+              <Lock className="h-3 w-3 text-accent" strokeWidth={2} aria-hidden />
+              Encrypted connections
+            </span>
+            <span>Read-only queries</span>
+            <span>Schema-aware generation</span>
+          </div>
         </div>
       </div>
     </div>
@@ -75,9 +76,9 @@ export function AuthVisualPanel({
 
 export function AuthPageShell({ children }: { children: ReactNode }) {
   return (
-    <div className="relative flex min-h-screen flex-col bg-bg-base lg:min-h-0 lg:flex-1">
-      <div className="flex flex-1 items-center justify-center px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
-        <div className="w-full max-w-[440px]">{children}</div>
+    <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div className="flex min-h-0 flex-1 items-center justify-center overflow-y-auto px-[var(--space-page)] py-[var(--space-5)] lg:overflow-hidden lg:py-[var(--space-5)]">
+        <div className="my-auto w-full max-w-[var(--auth-card-max-width)]">{children}</div>
       </div>
     </div>
   );

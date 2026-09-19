@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { ConfidenceRing } from "@/components/ui/ConfidenceRing";
 import { Badge } from "@/components/ui/Badge";
+import { cn } from "@/lib/utils";
 
 const DEMO_QUESTION = "Revenue by region this quarter?";
 
@@ -66,27 +67,20 @@ export function QueryTrustDemo() {
 
   return (
     <div className="relative w-full max-w-md">
-      <p className="mb-2 text-[10px] font-medium uppercase tracking-wider text-text-muted">
-        Demo preview
-      </p>
+      <p className="auth-section-label">Demo preview</p>
 
-      {/* Flow steps */}
-      <div className="mb-4 flex flex-wrap items-center gap-1">
+      <div className="mb-[var(--space-3)] flex flex-wrap items-center gap-[var(--space-1)]">
         {FLOW_STEPS.map(({ icon: Icon, label }, i) => (
-          <div key={label} className="flex items-center gap-1">
+          <div key={label} className="flex items-center gap-[var(--space-1)]">
             <span
-              className={[
-                "flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-medium transition-colors",
-                i <= activeStep
-                  ? "bg-accent-muted text-accent"
-                  : "bg-bg-elevated text-text-muted",
-              ].join(" ")}
+              className="auth-flow-chip"
+              data-active={i <= activeStep ? "true" : "false"}
             >
-              <Icon className="h-3 w-3" />
+              <Icon className="h-3 w-3 shrink-0" strokeWidth={2} aria-hidden />
               {label}
             </span>
             {i < FLOW_STEPS.length - 1 ? (
-              <span className="text-text-muted" aria-hidden>
+              <span className="text-[10px] text-text-muted" aria-hidden>
                 →
               </span>
             ) : null}
@@ -94,9 +88,9 @@ export function QueryTrustDemo() {
         ))}
       </div>
 
-      <div className="rounded-xl border border-border-subtle bg-bg-elevated/70 p-4 backdrop-blur-sm">
-        <p className="mb-1.5 text-[11px] text-text-muted">You asked</p>
-        <p className="min-h-[1.25rem] text-sm font-medium text-text-primary">
+      <div className="auth-demo-panel">
+        <p className="mb-[var(--space-2)] text-xs text-text-muted">You asked</p>
+        <p className="min-h-[1.25rem] text-sm font-medium leading-snug text-text-primary">
           &ldquo;{typedQuestion}
           {!reducedMotion && typedQuestion.length < DEMO_QUESTION.length ? (
             <span className="animate-pulse text-accent">|</span>
@@ -105,16 +99,17 @@ export function QueryTrustDemo() {
         </p>
 
         {showSql ? (
-          <div className="mt-3 animate-fade-up">
-            <div className="mb-2 flex flex-wrap items-center gap-1.5">
+          <div className="mt-[var(--space-3)] animate-fade-up">
+            <div className="mb-[var(--space-2)] flex flex-wrap items-center gap-[var(--space-2)]">
               <Badge variant="accent">orders</Badge>
               <Badge variant="default">regions</Badge>
               <Badge variant="default">products</Badge>
               <Badge variant="warning" className="gap-1">
-                <Lock className="h-2.5 w-2.5" /> READ ONLY
+                <Lock className="h-3 w-3" strokeWidth={2} aria-hidden />
+                READ ONLY
               </Badge>
             </div>
-            <pre className="sql-block !p-3 !text-[11px]">
+            <pre className="sql-block compact">
               <code>
                 <span className="kw">SELECT</span> region, <span className="fn">SUM</span>(total_amount)
                 {"\n"}
@@ -123,34 +118,31 @@ export function QueryTrustDemo() {
                 <span className="kw">WHERE</span> quarter = <span className="str">'Q3'</span>
               </code>
             </pre>
+
+            <div className="auth-trust-section">
+              <p className="auth-section-label mb-0">Query Trust</p>
+              <div className="auth-trust-grid">
+                <ConfidenceRing value={94} size={52} />
+                <ul className="auth-trust-checklist">
+                  {TRUST_SIGNALS.map(({ label, ok }) => (
+                    <li key={label}>
+                      <CheckCircle2
+                        className={cn(
+                          "h-3.5 w-3.5 shrink-0",
+                          ok ? "text-success" : "text-text-muted",
+                        )}
+                        strokeWidth={2}
+                        aria-hidden
+                      />
+                      {label}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
           </div>
         ) : null}
       </div>
-
-      {/* Query Trust */}
-      {showSql ? (
-        <div className="mt-3 animate-fade-up rounded-xl border border-border-subtle bg-bg-surface/90 p-3.5 backdrop-blur-sm">
-          <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-text-muted">
-            Query Trust
-          </p>
-          <div className="flex items-start gap-3">
-            <ConfidenceRing value={94} size={48} />
-            <ul className="flex-1 space-y-1">
-              {TRUST_SIGNALS.map(({ label, ok }) => (
-                <li
-                  key={label}
-                  className="flex items-center gap-1.5 text-[11px] text-text-secondary"
-                >
-                  <CheckCircle2
-                    className={`h-3 w-3 shrink-0 ${ok ? "text-success" : "text-text-muted"}`}
-                  />
-                  {label}
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
-      ) : null}
     </div>
   );
 }

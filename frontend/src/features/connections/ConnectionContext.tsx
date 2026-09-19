@@ -18,6 +18,7 @@ type ConnectionContextValue = {
   activeConnection: Connection | null;
   activeConnectionId: number | null;
   isLoading: boolean;
+  isError: boolean;
   setActiveConnectionId: (id: number | null) => void;
   refreshConnections: () => Promise<void>;
 };
@@ -31,7 +32,11 @@ export function ConnectionProvider({ children }: { children: ReactNode }) {
     getStoredConnectionId,
   );
 
-  const { data: connections = [], isLoading } = useQuery({
+  const {
+    data: connections = [],
+    isLoading,
+    isError,
+  } = useQuery({
     queryKey: ["connections"],
     queryFn: connectionsApi.list,
     enabled: isAuthenticated,
@@ -65,6 +70,7 @@ export function ConnectionProvider({ children }: { children: ReactNode }) {
       activeConnection,
       activeConnectionId,
       isLoading,
+      isError,
       setActiveConnectionId,
       refreshConnections,
     }),
@@ -73,6 +79,7 @@ export function ConnectionProvider({ children }: { children: ReactNode }) {
       activeConnection,
       activeConnectionId,
       isLoading,
+      isError,
       setActiveConnectionId,
       refreshConnections,
     ],

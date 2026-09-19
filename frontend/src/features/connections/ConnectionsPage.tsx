@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useSearchParams } from "react-router-dom";
 import {
   ArrowRight,
@@ -11,12 +11,11 @@ import {
   Loader2,
   RefreshCw,
   Trash2,
-  Upload,
 } from "lucide-react";
 import { useToast } from "@/app/ToastContext";
 import { ApiError } from "@/lib/api/client";
 import { connectionsApi, schemaApi } from "@/lib/api/endpoints";
-import type { ConnectionCreate, ConnectionTest } from "@/lib/api/types";
+import type { Connection, ConnectionCreate, ConnectionTest } from "@/lib/api/types";
 import { useConnection } from "@/features/connections/ConnectionContext";
 import {
   defaultPortForDbType,
@@ -26,13 +25,22 @@ import {
 } from "@/features/connections/connectionDefaults";
 import { OnboardingBanner } from "@/features/onboarding/OnboardingBanner";
 import { useOnboardingStatus } from "@/features/onboarding/useOnboardingStatus";
-import { formatDbType } from "@/lib/utils";
+import { formatDbType, formatRelativeTime } from "@/lib/utils";
+import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/Card";
+import { FileDropzone } from "@/components/ui/FileDropzone";
 import { Input } from "@/components/ui/Input";
 import { Label } from "@/components/ui/Label";
 import { Badge } from "@/components/ui/Badge";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { PageShell } from "@/components/ui/PageShell";
+import { QueryError } from "@/components/ui/QueryError";
+import { PageListSkeleton } from "@/components/ui/Skeleton";
 import { PasswordInput } from "@/components/ui/PasswordInput";
+import { Tooltip } from "@/components/ui/Tooltip";
+import { ConnectionAliasesSection } from "@/features/connections/ConnectionAliasesSection";
+import { cn } from "@/lib/utils";
 
 type TestState =
   | { status: "idle" }
@@ -40,28 +48,84 @@ type TestState =
   | { status: "success"; message: string }
   | { status: "error"; message: string };
 
-const TABS: { id: ConnectionTab; label: string; icon: typeof Database }[] = [
-  { id: "sqlite", label: "SQLite", icon: HardDrive },
-  { id: "server", label: "Server DB", icon: Cloud },
-  { id: "upload", label: "Upload", icon: FileSpreadsheet },
+const SOURCES: {
+  id: ConnectionTab;
+  title: string;
+  description: string;
+  icon: typeof Database;
+}[] = [
+  { id: "sqlite", title: "SQLite", description: "Local .db file on this machine", icon: HardDrive },
+  { id: "server", title: "Server database", description: "PostgreSQL, MySQL, or SQL Server", icon: Cloud },
+  { id: "upload", title: "Spreadsheet", description: "CSV or Excel imported locally", icon: FileSpreadsheet },
 ];
 
 function TestResultBanner({ testState }: { testState: TestState }) {
   if (testState.status === "idle" || testState.status === "testing") return null;
-
   if (testState.status === "success") {
-    return (
-      <p className="flex items-center gap-2 rounded-lg border border-success/30 bg-success/10 px-3 py-2 text-sm text-success">
-        <CheckCircle2 className="h-4 w-4 shrink-0" />
-        {testState.message}
-      </p>
-    );
+    return <Alert variant="success">{testState.message}</Alert>;
   }
+  return <Alert variant="danger">{testState.message}</Alert>;
+}
+
+function ConnectionTestPipeline({ testState }: { testState: TestState }) {
+  const steps = [
+    { id: "reach", label: "Reachable" },
+    { id: "auth", label: "Authenticated" },
+    { id: "db", label: "Database found" },
+  ];
+  const statusFor = (index: number): "pending" | "running" | "pass" | "fail" => {
+    if (testState.status === "idle") return "pending";
+    if (testState.status === "testing") return index === 0 ? "running" : "pending";
+    if (testState.status === "success") return "pass";
+    return index === 0 ? "fail" : "pending";
+  };
 
   return (
-    <p className="rounded-lg border border-danger/30 bg-[var(--color-danger-muted)] px-3 py-2 text-sm text-danger">
-      {testState.message}
-    </p>
+    <ol className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-0" aria-label="Connection validation">
+      {steps.map((step, index) => {
+        const status = statusFor(index);
+        return (
+          <li key={step.id} className="flex min-w-0 items-center gap-2 sm:flex-1">
+            {index > 0 ? (
+              <span
+                className={cn(
+                  "hidden h-px flex-1 sm:block",
+                  status === "pass" || testState.status === "success" ? "bg-success/50" : "bg-border-subtle",
+                )}
+                aria-hidden
+              />
+            ) : null}
+            <span className="flex items-center gap-2">
+              <span
+                className={cn(
+                  "flex h-5 w-5 items-center justify-center rounded-full border text-[10px]",
+                  status === "pass" && "border-success/40 bg-[var(--color-success-muted)] text-success",
+                  status === "running" && "border-accent/40 bg-accent-muted text-accent",
+                  status === "fail" && "border-danger/40 bg-[var(--color-danger-muted)] text-danger",
+                  status === "pending" && "border-border-subtle text-text-muted",
+                )}
+              >
+                {status === "pass" ? (
+                  <CheckCircle2 className="h-3.5 w-3.5" aria-hidden />
+                ) : status === "running" ? (
+                  <Loader2 className="h-3 w-3 motion-safe:animate-spin" aria-hidden />
+                ) : (
+                  <span className="h-1.5 w-1.5 rounded-full bg-border-default" aria-hidden />
+                )}
+              </span>
+              <span
+                className={cn(
+                  "text-xs",
+                  status === "running" ? "font-medium text-text-primary" : status === "pass" ? "text-text-secondary" : "text-text-muted",
+                )}
+              >
+                {step.label}
+              </span>
+            </span>
+          </li>
+        );
+      })}
+    </ol>
   );
 }
 
@@ -70,9 +134,15 @@ export function ConnectionsPage() {
   const queryClient = useQueryClient();
   const [searchParams] = useSearchParams();
   const isWelcome = searchParams.get("welcome") === "1";
-  const { connections, activeConnectionId, setActiveConnectionId, refreshConnections } =
-    useConnection();
-  const { steps, tableCount } = useOnboardingStatus();
+  const {
+    connections,
+    activeConnectionId,
+    setActiveConnectionId,
+    refreshConnections,
+    isLoading: connectionsLoading,
+    isError: connectionsError,
+  } = useConnection();
+  const { steps, tableCount, hasSchema } = useOnboardingStatus();
 
   const [tab, setTab] = useState<ConnectionTab>("sqlite");
   const [error, setError] = useState("");
@@ -191,7 +261,7 @@ export function ConnectionsPage() {
     },
   });
 
-  function handleRemoveConnection(conn: (typeof connections)[number]) {
+  function handleRemoveConnection(conn: Connection) {
     const isUpload = conn.db_type === "file_upload";
     const message = isUpload
       ? `Remove "${conn.name}"? This deletes the uploaded file from SchemaSay and clears the cached schema.`
@@ -224,6 +294,10 @@ export function ConnectionsPage() {
   function handleSqliteSubmit(e: FormEvent) {
     e.preventDefault();
     setError("");
+    if (sqliteTest.status !== "success") {
+      setError("Test the SQLite file before saving the connection.");
+      return;
+    }
     createConnection.mutate({
       name: sqliteName.trim(),
       db_type: "sqlite",
@@ -239,6 +313,10 @@ export function ConnectionsPage() {
   function handleServerSubmit(e: FormEvent) {
     e.preventDefault();
     setError("");
+    if (serverTest.status !== "success") {
+      setError("Test the server connection before saving.");
+      return;
+    }
     createConnection.mutate(buildServerCreatePayload());
   }
 
@@ -249,25 +327,27 @@ export function ConnectionsPage() {
   }
 
   const showPostConnectCta = justConnectedId !== null;
+  const sqliteCanSave = sqliteTest.status === "success" && sqliteName.trim().length > 0;
+  const serverCanSave =
+    serverTest.status === "success" &&
+    serverName.trim().length > 0 &&
+    serverHost.trim().length > 0 &&
+    serverDatabase.trim().length > 0;
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6">
+    <PageShell width="narrow">
       <OnboardingBanner />
 
-      <div>
-        <h1 className="text-2xl font-semibold text-text-primary">Connections</h1>
-        <p className="mt-1 text-sm text-text-secondary">
-          {isWelcome
-            ? "Step 1 of 3 — connect a data source. SchemaSay will cache your schema automatically."
-            : "Connect a database, sync schema, then ask questions in plain English."}
-        </p>
-      </div>
+      <PageHeader
+        title="Connections"
+        description={
+          isWelcome
+            ? "Step 1 of 3 — connect a data source, test it, then sync schema before asking questions."
+            : "Guided setup for a database or spreadsheet. Test, validate, then sync schema."
+        }
+      />
 
-      {error ? (
-        <p className="rounded-lg border border-danger/30 bg-[var(--color-danger-muted)] px-3 py-2 text-sm text-danger">
-          {error}
-        </p>
-      ) : null}
+      {error ? <Alert variant="danger">{error}</Alert> : null}
 
       {showPostConnectCta ? (
         <Card className="border-success/30 bg-success/5">
@@ -276,14 +356,14 @@ export function ConnectionsPage() {
               <p className="font-medium text-text-primary">Connection ready</p>
               <p className="mt-0.5 text-sm text-text-secondary">
                 {tableCount > 0
-                  ? `Schema cached with ${tableCount} table${tableCount === 1 ? "" : "s"}. Head to Ask to run your first question.`
-                  : "Schema is syncing in the background. Run Sync if tables don't appear, then head to Ask."}
+                  ? `Schema cached with ${tableCount} table${tableCount === 1 ? "" : "s"}. Explore your schema, then ask your first question.`
+                  : "Run Sync to load your schema, then explore tables before asking questions."}
               </p>
             </div>
             {tableCount > 0 ? (
-              <Link to="/ask">
+              <Link to="/schema">
                 <Button>
-                  Continue to Ask
+                  Explore schema
                   <ArrowRight className="h-4 w-4" />
                 </Button>
               </Link>
@@ -293,7 +373,7 @@ export function ConnectionsPage() {
                 disabled={syncingId === justConnectedId}
               >
                 {syncingId === justConnectedId ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <Loader2 className="h-4 w-4 motion-safe:animate-spin" />
                 ) : (
                   <RefreshCw className="h-4 w-4" />
                 )}
@@ -304,32 +384,40 @@ export function ConnectionsPage() {
         </Card>
       ) : null}
 
-      <div className="flex gap-1 rounded-lg border border-border-subtle bg-bg-surface p-1">
-        {TABS.map(({ id, label, icon: Icon }) => (
-          <button
-            key={id}
-            type="button"
-            onClick={() => setTab(id)}
-            className={[
-              "flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors",
-              tab === id
-                ? "bg-accent-muted text-accent shadow-sm"
-                : "text-text-secondary hover:bg-bg-elevated hover:text-text-primary",
-            ].join(" ")}
-          >
-            <Icon className="h-4 w-4" />
-            <span className="hidden sm:inline">{label}</span>
-          </button>
-        ))}
-      </div>
+      <section>
+        <p className="type-meta mb-3">Choose a source</p>
+        <div className="grid gap-3 sm:grid-cols-3">
+          {SOURCES.map(({ id, title, description, icon: Icon }) => {
+            const selected = tab === id;
+            return (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setTab(id)}
+                className={cn(
+                  "rounded-[var(--radius-md)] border p-4 text-left transition-colors",
+                  selected
+                    ? "border-accent/40 bg-accent-muted/40 shadow-sm"
+                    : "border-border-subtle bg-bg-surface hover:border-border-default hover:bg-bg-elevated",
+                )}
+              >
+                <Icon className={cn("icon-md", selected ? "text-accent" : "text-text-muted")} strokeWidth={2} aria-hidden />
+                <p className="mt-2 text-sm font-medium text-text-primary">{title}</p>
+                <p className="mt-0.5 text-xs leading-relaxed text-text-muted">{description}</p>
+              </button>
+            );
+          })}
+        </div>
+      </section>
 
       {tab === "sqlite" ? (
         <Card>
           <CardHeader>
             <CardTitle>SQLite database</CardTitle>
-            <CardDescription>Point to a local .db file using an absolute path.</CardDescription>
+            <CardDescription>Point to a local .db file using an absolute path, then test before saving.</CardDescription>
           </CardHeader>
           <form onSubmit={handleSqliteSubmit} className="space-y-4">
+            <SetupSteps current={sqliteTest.status === "success" ? 2 : sqlitePath.trim() ? 1 : 0} labels={["Configure", "Test", "Save"]} />
             <div>
               <Label htmlFor="sqlite-name">Connection name</Label>
               <Input
@@ -353,6 +441,7 @@ export function ConnectionsPage() {
                 required
               />
             </div>
+            <ConnectionTestPipeline testState={sqliteTest} />
             <TestResultBanner testState={sqliteTest} />
             <div className="flex flex-wrap gap-2">
               <Button
@@ -362,13 +451,17 @@ export function ConnectionsPage() {
                 onClick={handleSqliteTest}
               >
                 {sqliteTest.status === "testing" ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <Loader2 className="h-4 w-4 motion-safe:animate-spin" />
                 ) : null}
                 Test connection
               </Button>
-              <Button type="submit" disabled={createConnection.isPending}>
-                {createConnection.isPending ? "Connecting…" : "Save connection"}
-              </Button>
+              <Tooltip content={sqliteCanSave ? "Save this validated connection" : "Test successfully before saving"}>
+                <span>
+                  <Button type="submit" disabled={!sqliteCanSave || createConnection.isPending}>
+                    {createConnection.isPending ? "Connecting…" : "Save connection"}
+                  </Button>
+                </span>
+              </Tooltip>
             </div>
           </form>
         </Card>
@@ -378,9 +471,10 @@ export function ConnectionsPage() {
         <Card>
           <CardHeader>
             <CardTitle>Server database</CardTitle>
-            <CardDescription>PostgreSQL, MySQL, or SQL Server over the network.</CardDescription>
+            <CardDescription>PostgreSQL, MySQL, or SQL Server. Test credentials before they are stored.</CardDescription>
           </CardHeader>
           <form onSubmit={handleServerSubmit} className="space-y-4">
+            <SetupSteps current={serverTest.status === "success" ? 2 : serverHost.trim() ? 1 : 0} labels={["Configure", "Test", "Save"]} />
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
                 <Label htmlFor="server-name">Connection name</Label>
@@ -398,7 +492,7 @@ export function ConnectionsPage() {
                   id="server-type"
                   value={serverDbType}
                   onChange={(e) => handleServerTypeChange(e.target.value as ServerDbType)}
-                  className="h-10 w-full rounded-md border border-border-default bg-bg-elevated px-3 text-sm text-text-primary focus:border-border-focus focus:outline-none focus:ring-2 focus:ring-accent/20"
+                  className="control-base w-full px-3 text-sm"
                 >
                   {SERVER_DB_OPTIONS.map((opt) => (
                     <option key={opt.value} value={opt.value}>
@@ -479,6 +573,7 @@ export function ConnectionsPage() {
                 required
               />
             </div>
+            <ConnectionTestPipeline testState={serverTest} />
             <TestResultBanner testState={serverTest} />
             <div className="flex flex-wrap gap-2">
               <Button
@@ -493,13 +588,17 @@ export function ConnectionsPage() {
                 onClick={handleServerTest}
               >
                 {serverTest.status === "testing" ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <Loader2 className="h-4 w-4 motion-safe:animate-spin" />
                 ) : null}
                 Test connection
               </Button>
-              <Button type="submit" disabled={createConnection.isPending}>
-                {createConnection.isPending ? "Connecting…" : "Save connection"}
-              </Button>
+              <Tooltip content={serverCanSave ? "Save this validated connection" : "Test successfully before saving"}>
+                <span>
+                  <Button type="submit" disabled={!serverCanSave || createConnection.isPending}>
+                    {createConnection.isPending ? "Connecting…" : "Save connection"}
+                  </Button>
+                </span>
+              </Tooltip>
             </div>
           </form>
         </Card>
@@ -509,9 +608,10 @@ export function ConnectionsPage() {
         <Card>
           <CardHeader>
             <CardTitle>Upload spreadsheet</CardTitle>
-            <CardDescription>CSV or Excel — imported into a local SQLite table.</CardDescription>
+            <CardDescription>CSV or Excel — imported into a local SQLite table. Max 10 MB.</CardDescription>
           </CardHeader>
           <form onSubmit={handleUploadSubmit} className="space-y-4">
+            <SetupSteps current={uploadFile ? 1 : 0} labels={["Name", "Choose file", "Upload"]} />
             <div>
               <Label htmlFor="upload-name">Connection name</Label>
               <Input
@@ -524,16 +624,14 @@ export function ConnectionsPage() {
             </div>
             <div>
               <Label htmlFor="upload-file">File</Label>
-              <Input
+              <FileDropzone
                 id="upload-file"
-                type="file"
-                accept=".csv,.xlsx,.xls"
-                onChange={(e) => setUploadFile(e.target.files?.[0] ?? null)}
-                required
+                file={uploadFile}
+                onFile={setUploadFile}
+                disabled={uploadMutation.isPending}
               />
             </div>
-            <Button type="submit" disabled={uploadMutation.isPending || !uploadFile}>
-              <Upload className="h-4 w-4" />
+            <Button type="submit" disabled={uploadMutation.isPending || !uploadFile || !uploadName.trim()}>
               {uploadMutation.isPending ? "Uploading…" : "Upload & connect"}
             </Button>
           </form>
@@ -542,16 +640,22 @@ export function ConnectionsPage() {
 
       <section className="space-y-3">
         <div>
-          <h2 className="text-sm font-semibold text-text-primary">Your connections</h2>
+          <h2 className="type-heading">Your connections</h2>
           <p className="mt-0.5 text-xs text-text-muted">
-            Use <strong className="font-medium text-text-secondary">Remove</strong> to disconnect a
-            database from SchemaSay.
+            Status shows whether schema is cached. Remove disconnects SchemaSay without deleting your original database.
           </p>
         </div>
-        {!connections.length ? (
+        {connectionsError ? (
+          <QueryError
+            message="Could not load your connections."
+            onRetry={() => void refreshConnections()}
+          />
+        ) : connectionsLoading ? (
+          <PageListSkeleton rows={3} />
+        ) : !connections.length ? (
           <Card>
             <p className="text-sm text-text-muted">
-              No connections yet. Pick a tab above to add your first data source.
+              No connections yet. Pick a source above to add your first data source.
             </p>
           </Card>
         ) : (
@@ -561,10 +665,10 @@ export function ConnectionsPage() {
             return (
               <Card
                 key={conn.id}
-                className={[
+                className={cn(
                   "flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between",
-                  isActive ? "border-accent/30" : "",
-                ].join(" ")}
+                  isActive && "border-accent/30",
+                )}
               >
                 <div className="flex items-start gap-3">
                   <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-accent-muted">
@@ -576,30 +680,38 @@ export function ConnectionsPage() {
                       <Badge variant="accent">{formatDbType(conn.db_type)}</Badge>
                       {isActive ? <Badge>Active</Badge> : null}
                       {isNew ? <Badge variant="accent">New</Badge> : null}
+                      <ConnectionSchemaBadge connectionId={conn.id} />
                     </div>
-                    <p className="mt-0.5 truncate text-xs text-text-muted">{conn.database_name}</p>
+                    <p className="mt-0.5 truncate text-xs text-text-muted">
+                      {conn.database_name}
+                      {conn.updated_at ? ` · ${formatRelativeTime(conn.updated_at)}` : ""}
+                    </p>
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => void handleSync(conn.id, false)}
-                    disabled={syncingId === conn.id}
-                  >
-                    <RefreshCw
-                      className={`h-3.5 w-3.5 ${syncingId === conn.id ? "animate-spin" : ""}`}
-                    />
-                    Sync
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => void handleSync(conn.id, true)}
-                    disabled={syncingId === conn.id}
-                  >
-                    Deep sync
-                  </Button>
+                  <Tooltip content="Refresh tables and columns">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => void handleSync(conn.id, false)}
+                      disabled={syncingId === conn.id}
+                    >
+                      <RefreshCw
+                        className={`h-3.5 w-3.5 ${syncingId === conn.id ? "motion-safe:animate-spin" : ""}`}
+                      />
+                      Sync
+                    </Button>
+                  </Tooltip>
+                  <Tooltip content="Also profile null ratios and samples">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => void handleSync(conn.id, true)}
+                      disabled={syncingId === conn.id}
+                    >
+                      Deep sync
+                    </Button>
+                  </Tooltip>
                   {!isActive ? (
                     <Button variant="ghost" size="sm" onClick={() => setActiveConnectionId(conn.id)}>
                       Use
@@ -622,15 +734,75 @@ export function ConnectionsPage() {
         )}
       </section>
 
-      {!steps.sync && connections.length > 0 ? (
+      {activeConnectionId ? (
+        <ConnectionAliasesSection
+          connectionId={activeConnectionId}
+          connectionName={connections.find((conn) => conn.id === activeConnectionId)?.name ?? "this connection"}
+        />
+      ) : null}
+
+      {!hasSchema && connections.length > 0 ? (
         <Card className="border-accent/20 bg-accent-muted/20">
           <p className="text-sm text-text-secondary">
-            <strong className="text-text-primary">Step 2:</strong> Run{" "}
-            <strong>Sync</strong> on your connection if tables don&apos;t appear in Ask. Use{" "}
+            <strong className="text-text-primary">Next:</strong> Run{" "}
+            <strong>Sync</strong> on your connection to load tables for the schema explorer. Use{" "}
             <strong>Deep sync</strong> to profile columns (null ratios, samples).
           </p>
         </Card>
+      ) : !steps.explore && hasSchema ? (
+        <Card className="border-accent/20 bg-accent-muted/20">
+          <p className="text-sm text-text-secondary">
+            <strong className="text-text-primary">Next:</strong> Open the{" "}
+            <Link to="/schema" className="font-medium text-accent">
+              schema explorer
+            </Link>{" "}
+            to browse tables and columns before asking questions.
+          </p>
+        </Card>
       ) : null}
-    </div>
+    </PageShell>
   );
+}
+
+function SetupSteps({ current, labels }: { current: number; labels: string[] }) {
+  return (
+    <ol className="flex items-center gap-2 text-[11px]" aria-label="Setup steps">
+      {labels.map((label, index) => {
+        const done = index < current;
+        const active = index === current;
+        return (
+          <li key={label} className="flex items-center gap-2">
+            {index > 0 ? <span className="h-px w-4 bg-border-subtle" aria-hidden /> : null}
+            <span
+              className={cn(
+                "rounded-full px-2 py-0.5 font-medium",
+                done && "bg-[var(--color-success-muted)] text-success",
+                active && "bg-accent-muted text-accent",
+                !done && !active && "bg-bg-elevated text-text-muted",
+              )}
+            >
+              {index + 1}. {label}
+            </span>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+function ConnectionSchemaBadge({ connectionId }: { connectionId: number }) {
+  const { data } = useQuery({
+    queryKey: ["schema-tree", connectionId],
+    queryFn: () => schemaApi.tree(connectionId),
+    staleTime: 60_000,
+  });
+  const count = data?.tables.length ?? 0;
+  if (count > 0) {
+    return (
+      <Badge variant="success">
+        {count} table{count === 1 ? "" : "s"}
+      </Badge>
+    );
+  }
+  return <Badge>Needs sync</Badge>;
 }

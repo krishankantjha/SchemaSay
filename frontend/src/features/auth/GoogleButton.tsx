@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Button } from "@/components/ui/Button";
 
 function GoogleGlyph() {
@@ -25,10 +26,15 @@ function GoogleGlyph() {
 
 type GoogleButtonProps = {
   label?: string;
+  disabled?: boolean;
 };
 
-export function GoogleButton({ label = "Continue with Google" }: GoogleButtonProps) {
+export function GoogleButton({ label = "Continue with Google", disabled = false }: GoogleButtonProps) {
+  const [redirecting, setRedirecting] = useState(false);
+
   function handleClick() {
+    if (disabled || redirecting) return;
+    setRedirecting(true);
     const url =
       import.meta.env.VITE_GOOGLE_AUTH_URL ??
       `${import.meta.env.VITE_API_URL ?? "/api/v1"}/auth/google`;
@@ -40,12 +46,20 @@ export function GoogleButton({ label = "Continue with Google" }: GoogleButtonPro
       type="button"
       variant="secondary"
       size="lg"
-      className="w-full bg-bg-elevated/80"
+      className="w-full"
       onClick={handleClick}
+      disabled={disabled || redirecting}
+      loading={redirecting}
       aria-label={label}
     >
-      <GoogleGlyph />
-      {label}
+      {redirecting ? (
+        "Redirecting to Google…"
+      ) : (
+        <>
+          <GoogleGlyph />
+          {label}
+        </>
+      )}
     </Button>
   );
 }
