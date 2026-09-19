@@ -1,37 +1,26 @@
 import re
 import logging
-from dataclasses import dataclass
-from typing import List, Dict, Optional
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional
 
 from app.config import settings
+from app.core.ai.heuristic_aliases import AliasContext
+from app.core.ai.heuristic_compiler import compile_heuristic
+from app.core.ai.heuristic_routing import (
+    RouteAction,
+    decide_heuristic_route,
+    should_use_heuristic_result,
+)
+from app.core.ai.heuristic_validation import validate_heuristic_sql
 from app.core.ai.llm_client import (
     complete_chat_with_fallback,
-    get_cached_client,
-    is_api_key_valid,
     list_llm_clients,
 )
+from app.core.grounding.validator import validate_sql_grounding
+from app.core.schema.graph import SchemaGraph
+from app.core.security.sql_validator import validate_sql_structure
 
 logger = logging.getLogger("schemasay.generator")
-
-_SIMPLE_LISTING = re.compile(
-    r"\b(show|list|display|get|see|view|fetch)\b|\b(all|every)\b",
-    re.IGNORECASE,
-)
-_AGGREGATION_QUESTION = re.compile(
-    r"\b(count|sum|average|avg|total|how many|top\s+\d+|bottom|rate|percent|compare|trend)\b",
-    re.IGNORECASE,
-)
-
-
-def _should_use_heuristic_first(question: str, schema_metadata: List[Dict]) -> bool:
-    """Use the offline compiler for straightforward listing questions."""
-    if not schema_metadata or _AGGREGATION_QUESTION.search(question):
-        return False
-    if not _SIMPLE_LISTING.search(question):
-        return False
-    q = question.lower()
-    table_names = {entry["table_name"].lower() for entry in schema_metadata}
-    return any(name in q for name in table_names)
 
 
 def sanitize_prompt_input(text: str) -> str:
@@ -39,154 +28,10 @@ def sanitize_prompt_input(text: str) -> str:
     Strips raw control character symbols and blocks instruction overrides
     to mitigate prompt injection attacks.
     """
-    # Strip ASCII control characters that may interfere with prompts
     cleaned = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', text)
-    # Remove common system prompt injection patterns
     override_pattern = r'(?i)(ignore\s+all\s+previous|ignore\s+all\s+instructions|forget\s+all\s+previous|forget\s+all\s+instructions|system\s+prompt|system\s+override|instruction\s+override|override\s+system|override\s+instruction|developer\s+instruction)'
     cleaned = re.sub(override_pattern, '', cleaned)
     return cleaned.strip()
-
-def heuristic_offline_compiler(question: str, db_type: str, schema_metadata: List[Dict]) -> str:
-    """
-    Offline fallback compiler that matches natural language questions to cached database
-    table and column schemas, generating clean read-only SQL queries rule-base.
-    Supports SQLite, PostgreSQL, MySQL, and Microsoft SQL Server (MSSQL) limit dialects.
-    """
-    if not schema_metadata:
-        return "SELECT 1"
-
-    # Map tables and their column lists
-    tables_columns = {}
-    for entry in schema_metadata:
-        t_name = entry["table_name"]
-        if t_name not in tables_columns:
-            tables_columns[t_name] = []
-        tables_columns[t_name].append(entry["column_name"])
-
-    question_lower = question.lower()
-    db_type_lower = db_type.lower()
-    
-    # 1. Match referenced tables
-    matched_tables = []
-    for t_name in tables_columns.keys():
-        if re.search(r'\b' + re.escape(t_name.lower()) + r'\b', question_lower):
-            matched_tables.append(t_name)
-            
-    # Default to first table if none recognized
-    primary_table = matched_tables[0] if matched_tables else list(tables_columns.keys())[0]
-
-    # 2. Extract row limit
-    limit_num = "10"
-    limit_clause = "LIMIT 10"
-    limit_match = re.search(r'\b(top|limit|first|show)\s+(\d+)\b', question_lower)
-    if limit_match:
-        limit_num = limit_match.group(2)
-        limit_clause = f"LIMIT {limit_num}"
-    elif re.search(r'\b(all|every)\b', question_lower):
-        limit_clause = ""
-        limit_num = ""
-
-    # 3. Select columns
-    selected_cols = []
-    for col in tables_columns[primary_table]:
-        if re.search(r'\b' + re.escape(col.lower()) + r'\b', question_lower):
-            selected_cols.append(col)
-            
-    columns_clause = ", ".join(selected_cols) if selected_cols else "*"
-
-    # 4. Handle aggregations (COUNT, SUM)
-    is_count = any(word in question_lower for word in ["count", "total number", "how many"])
-    if is_count:
-        columns_clause = "COUNT(*)"
-        limit_clause = ""
-        limit_num = ""
-        
-    is_sum = any(word in question_lower for word in ["sum", "total", "amount", "cost"]) and not is_count
-    if is_sum:
-        numeric_keywords = ["price", "amount", "sales", "cost", "quantity", "value", "id"]
-        target_num_col = None
-        for kw in numeric_keywords:
-            for col in tables_columns[primary_table]:
-                if kw in col.lower():
-                    target_num_col = col
-                    break
-            if target_num_col:
-                break
-        if target_num_col:
-            columns_clause = f"SUM({target_num_col})"
-            limit_clause = ""
-            limit_num = ""
-
-    # 5. Apply chronological ordering
-    order_clause = ""
-    is_chrono = any(word in question_lower for word in ["latest", "recent", "newest", "youngest"])
-    if is_chrono:
-        date_keywords = ["created_at", "updated_at", "date", "timestamp", "id"]
-        target_date_col = None
-        for kw in date_keywords:
-            for col in tables_columns[primary_table]:
-                if kw in col.lower():
-                    target_date_col = col
-                    break
-            if target_date_col:
-                break
-        if target_date_col:
-            order_clause = f"ORDER BY {target_date_col} DESC"
-
-    # 6. Auto-join referenced tables using FK relationships
-    if len(matched_tables) > 1:
-        secondary_table = matched_tables[1]
-        fk_col = None
-        referred_col = None
-        for entry in schema_metadata:
-            if entry["table_name"] == primary_table and "FOREIGN KEY ->" in entry["data_type"]:
-                ref_target = entry["data_type"].split("FOREIGN KEY -> ")[1].strip()
-                if ref_target.startswith(secondary_table + "."):
-                    fk_col = entry["column_name"]
-                    referred_col = ref_target.split(".")[1]
-                    break
-                    
-        # Check bidirectional FK mapping relation
-        if not fk_col:
-            for entry in schema_metadata:
-                if entry["table_name"] == secondary_table and "FOREIGN KEY ->" in entry["data_type"]:
-                    ref_target = entry["data_type"].split("FOREIGN KEY -> ")[1].strip()
-                    if ref_target.startswith(primary_table + "."):
-                        fk_col = ref_target.split(".")[1]
-                        referred_col = entry["column_name"]
-                        break
-
-        if fk_col and referred_col:
-            # Handle MSSQL SELECT TOP dialect conversion for JOIN query
-            if db_type_lower == "mssql" and limit_num:
-                query = f"SELECT TOP {limit_num} {columns_clause} FROM {primary_table} JOIN {secondary_table} ON {primary_table}.{fk_col} = {secondary_table}.{referred_col}"  # nosec B608: schema-derived identifiers; output is centrally validated
-            else:
-                query = f"SELECT {columns_clause} FROM {primary_table} JOIN {secondary_table} ON {primary_table}.{fk_col} = {secondary_table}.{referred_col}"  # nosec B608: schema-derived identifiers; output is centrally validated
-                
-            if order_clause:
-                query += f" {order_clause}"
-            if limit_clause and db_type_lower != "mssql":
-                query += f" {limit_clause}"
-            return query
-
-    # Assemble simple select query based on dialect
-    if db_type_lower == "mssql":
-        # MSSQL select top mapping
-        if limit_num:
-            query_parts = [f"SELECT TOP {limit_num} {columns_clause} FROM {primary_table}"]  # nosec B608: schema-derived identifiers; output is centrally validated
-        else:
-            query_parts = [f"SELECT {columns_clause} FROM {primary_table}"]  # nosec B608: schema-derived identifiers; output is centrally validated
-        if order_clause:
-            query_parts.append(order_clause)
-    else:
-        # Standard SQL
-        query_parts = [f"SELECT {columns_clause} FROM {primary_table}"]  # nosec B608: schema-derived identifiers; output is centrally validated
-        if order_clause:
-            query_parts.append(order_clause)
-        if limit_clause:
-            query_parts.append(limit_clause)
-
-    return " ".join(query_parts)
 
 
 @dataclass
@@ -195,6 +40,14 @@ class SqlGenerationResult:
     used_llm: bool
     provider: Optional[str] = None
     model: Optional[str] = None
+    heuristic_confidence: Optional[float] = None
+    heuristic_tier: Optional[str] = None
+    heuristic_intent: Optional[str] = None
+    calibrated_confidence: Optional[float] = None
+    routing_decision: Optional[str] = None
+    validation_passed: Optional[bool] = None
+    component_confidence: Optional[Dict[str, float]] = None
+    validation_issues: List[str] = field(default_factory=list)
 
 
 def extract_sql(text: str) -> str:
@@ -208,15 +61,65 @@ def extract_sql(text: str) -> str:
     return cleaned.strip().rstrip(";").strip()
 
 
+def _is_heuristic_grounded(sql: str, graph: SchemaGraph) -> bool:
+    """True when compiled SQL references only known schema objects."""
+    if not graph.tables:
+        return True
+    grounding = validate_sql_grounding(sql, graph)
+    return (
+        grounding.valid
+        and not grounding.unknown_tables
+        and not grounding.unknown_columns
+    )
+
+
+def _heuristic_result_payload(heuristic, validation=None, route=None) -> dict:
+    payload = {
+        "heuristic_confidence": heuristic.confidence,
+        "heuristic_tier": heuristic.tier,
+        "heuristic_intent": heuristic.intent,
+    }
+    if validation:
+        payload["calibrated_confidence"] = validation.calibrated_confidence
+        payload["validation_passed"] = validation.can_execute
+        payload["component_confidence"] = {
+            "table": validation.component.table,
+            "column": validation.component.column,
+            "join": validation.component.join,
+            "aggregation": validation.component.aggregation,
+        }
+        payload["validation_issues"] = validation.issues
+    if route:
+        payload["routing_decision"] = route.action.value
+    return payload
+
+
+def _validate_llm_sql(sql: str, db_type: str, graph: SchemaGraph) -> tuple[bool, List[str]]:
+    issues: List[str] = []
+    safe, err = validate_sql_structure(sql, db_type)
+    if not safe:
+        issues.append(f"safety:{err}")
+    grounding = validate_sql_grounding(sql, graph)
+    if not grounding.valid:
+        issues.extend(grounding.warnings)
+    return len(issues) == 0, issues
+
+
 def generate_sql(
     question: str,
     db_type: str,
     schema_metadata: List[Dict],
     verified_examples: Optional[List[Dict]] = None,
+    alias_context: Optional[AliasContext] = None,
 ) -> SqlGenerationResult:
     """
-    Translate a natural-language question into SQL using configured LLM providers,
-    falling back to the heuristic compiler when no provider succeeds.
+    Translate natural language to SQL.
+
+    Resolution order:
+    1. High-confidence verified learning example
+    2. Heuristic compiler with tier-based routing (L1/L2 execute, L3 validate)
+    3. LLM for ambiguous / ungrounded / complex questions
+    4. Heuristic fallback when LLM fails
     """
     sanitized_question = sanitize_prompt_input(question)
 
@@ -241,23 +144,71 @@ def generate_sql(
                 provider="learning_example",
             )
 
-    heuristic_sql = heuristic_offline_compiler(sanitized_question, db_type, schema_metadata)
+    schema_graph = SchemaGraph.from_schema_metadata(schema_metadata)
+    heuristic = compile_heuristic(
+        sanitized_question,
+        db_type,
+        schema_metadata,
+        alias_context=alias_context or AliasContext.global_defaults(),
+    )
 
-    if _should_use_heuristic_first(sanitized_question, schema_metadata):
-        logger.info("Using heuristic compiler for simple listing question.")
-        return SqlGenerationResult(sql=heuristic_sql, used_llm=False, provider="heuristic")
+    route = decide_heuristic_route(heuristic)
+    require_semantic = route.action == RouteAction.HEURISTIC_VALIDATE
+
+    if route.action in (RouteAction.HEURISTIC_EXECUTE, RouteAction.HEURISTIC_VALIDATE) and heuristic.sql:
+        validation = validate_heuristic_sql(
+            sql=heuristic.sql,
+            db_type=db_type,
+            graph=schema_graph,
+            heuristic=heuristic,
+            require_semantic=require_semantic,
+        )
+        if should_use_heuristic_result(route, validation):
+            logger.info(
+                "Using heuristic (%s, route=%s, tier=%s, compile=%.2f, calibrated=%.2f).",
+                route.reason,
+                route.action.value,
+                heuristic.tier,
+                heuristic.confidence,
+                validation.calibrated_confidence,
+            )
+            return SqlGenerationResult(
+                sql=heuristic.sql,
+                used_llm=False,
+                provider="heuristic",
+                **_heuristic_result_payload(heuristic, validation, route),
+            )
+        logger.info(
+            "Heuristic validation failed (route=%s, tier=%s, issues=%s); escalating to LLM.",
+            route.action.value,
+            heuristic.tier,
+            validation.issues,
+        )
 
     if not list_llm_clients():
-        return SqlGenerationResult(sql=heuristic_sql, used_llm=False, provider="heuristic")
+        sql = heuristic.sql if heuristic.sql else "SELECT 1"
+        logger.info(
+            "No LLM configured; using heuristic fallback (tier=%s, confidence=%.2f).",
+            heuristic.tier,
+            heuristic.confidence,
+        )
+        return SqlGenerationResult(
+            sql=sql,
+            used_llm=False,
+            provider="heuristic",
+            routing_decision=RouteAction.FALLBACK.value,
+            **_heuristic_result_payload(heuristic),
+        )
 
     max_schema_items = 200
     is_truncated = False
+    llm_schema = schema_metadata
     if len(schema_metadata) > max_schema_items:
-        schema_metadata = schema_metadata[:max_schema_items]
+        llm_schema = schema_metadata[:max_schema_items]
         is_truncated = True
 
     schema_context = []
-    for entry in schema_metadata:
+    for entry in llm_schema:
         schema_context.append(
             f"Table: {entry['table_name']}, Column: {entry['column_name']}, Type/Constraint: {entry['data_type']}"
         )
@@ -311,16 +262,59 @@ def generate_sql(
         sql = extract_sql(completion.content)
         if not sql:
             raise RuntimeError("LLM returned no SQL statement.")
+
+        llm_valid, llm_issues = _validate_llm_sql(sql, db_type, schema_graph)
+        if not llm_valid:
+            logger.warning("LLM SQL failed validation (%s); attempting heuristic fallback.", llm_issues)
+            if heuristic.sql:
+                fallback_validation = validate_heuristic_sql(
+                    sql=heuristic.sql,
+                    db_type=db_type,
+                    graph=schema_graph,
+                    heuristic=heuristic,
+                    require_semantic=False,
+                )
+                if fallback_validation.safety_valid and fallback_validation.grounding_valid:
+                    return SqlGenerationResult(
+                        sql=heuristic.sql,
+                        used_llm=False,
+                        provider="heuristic",
+                        routing_decision=RouteAction.FALLBACK.value,
+                        **_heuristic_result_payload(heuristic, fallback_validation),
+                    )
+            raise RuntimeError("LLM SQL failed safety/grounding validation.")
+
         logger.info("SQL generated via %s (%s).", completion.provider, completion.model)
         return SqlGenerationResult(
             sql=sql,
             used_llm=True,
             provider=completion.provider,
             model=completion.model,
+            routing_decision=RouteAction.LLM.value,
+            validation_passed=llm_valid,
         )
     except Exception as e:
-        logger.error(f"AI compilation failed, falling back to heuristic offline compiler: {str(e)}")
-        return SqlGenerationResult(sql=heuristic_sql, used_llm=False, provider="heuristic")
+        logger.error(
+            "AI compilation failed, falling back to heuristic offline compiler: %s",
+            str(e),
+        )
+        fallback_sql = heuristic.sql if heuristic.sql else "SELECT 1"
+        fallback_validation = None
+        if heuristic.sql:
+            fallback_validation = validate_heuristic_sql(
+                sql=heuristic.sql,
+                db_type=db_type,
+                graph=schema_graph,
+                heuristic=heuristic,
+                require_semantic=False,
+            )
+        return SqlGenerationResult(
+            sql=fallback_sql,
+            used_llm=False,
+            provider="heuristic",
+            routing_decision=RouteAction.FALLBACK.value,
+            **_heuristic_result_payload(heuristic, fallback_validation),
+        )
 
 
 def generate_sql_from_question(
@@ -328,8 +322,9 @@ def generate_sql_from_question(
     db_type: str,
     schema_metadata: List[Dict],
     verified_examples: Optional[List[Dict]] = None,
+    alias_context: Optional[AliasContext] = None,
 ) -> str:
-    """
-    Compatibility wrapper that returns only the generated SQL string.
-    """
-    return generate_sql(question, db_type, schema_metadata, verified_examples).sql
+    """Compatibility wrapper that returns only the generated SQL string."""
+    return generate_sql(
+        question, db_type, schema_metadata, verified_examples, alias_context=alias_context
+    ).sql

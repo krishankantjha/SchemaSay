@@ -123,6 +123,43 @@ class ConnectionTestResponse(BaseModel):
     message: str
 
 
+class SchemaAliasCreate(BaseModel):
+    """Input schema for creating a per-connection table or column alias."""
+    alias_type: Literal["table", "column"]
+    alias_token: str = Field(..., min_length=1, max_length=128)
+    target_table: str = Field(..., min_length=1, max_length=256)
+    target_column: Optional[str] = Field(default=None, max_length=256)
+
+    @model_validator(mode="after")
+    def validate_alias_shape(self) -> "SchemaAliasCreate":
+        if self.alias_type == "column" and not (self.target_column and self.target_column.strip()):
+            raise ValueError("target_column is required for column aliases")
+        if self.alias_type == "table" and self.target_column:
+            raise ValueError("target_column must be omitted for table aliases")
+        return self
+
+
+class SchemaAliasUpdate(BaseModel):
+    """Input schema for updating an existing alias mapping."""
+    alias_token: str = Field(..., min_length=1, max_length=128)
+    target_table: str = Field(..., min_length=1, max_length=256)
+    target_column: Optional[str] = Field(default=None, max_length=256)
+
+
+class SchemaAliasResponse(BaseModel):
+    """Serialized alias record returned by the connections API."""
+    id: int
+    connection_id: int
+    alias_type: Literal["table", "column"]
+    alias_token: str
+    target_table: str
+    target_column: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
 class AuditLogResponse(BaseModel):
     """
     Output serialization schema for query execution logs and history records.

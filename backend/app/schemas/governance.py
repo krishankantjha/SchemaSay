@@ -1,7 +1,21 @@
 from datetime import datetime
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from pydantic import BaseModel, Field
+
+
+class AuditTelemetryResponse(BaseModel):
+    """Parsed eval telemetry attached to an audit log entry."""
+    routing_decision: Optional[str] = None
+    validation_passed: Optional[bool] = None
+    calibrated_confidence: Optional[int] = None
+    heuristic_intent: Optional[str] = None
+    used_llm: bool = False
+    escalation_reason: Optional[str] = None
+    false_confidence: bool = False
+    execution_match: Optional[bool] = None
+    validation_issues: List[str] = Field(default_factory=list)
+    component_confidence: Optional[Dict[str, float]] = None
 
 
 class AuditLogDetailResponse(BaseModel):
@@ -20,6 +34,9 @@ class AuditLogDetailResponse(BaseModel):
     row_count: Optional[int] = None
     resolution_source: Optional[str] = None
     metric_id: Optional[int] = None
+    heuristic_tier: Optional[str] = None
+    heuristic_compile_confidence: Optional[int] = None
+    eval_telemetry: Optional[AuditTelemetryResponse] = None
     created_at: datetime
 
     class Config:

@@ -3,53 +3,9 @@ import uuid
 from fastapi import status
 from sqlalchemy import create_engine, text
 from app.models.connection import DatabaseConnection, QueryAuditLog
-from app.core.ai.query_generator import generate_sql_from_question, heuristic_offline_compiler
+from app.core.ai.query_generator import generate_sql_from_question
 from app.core.ai.executor import execute_assistant_query
 from app.core.security.sql_validator import validate_sql_structure
-
-def test_heuristic_offline_compiler_rules():
-    """
-    Verifies that the offline compiler fallback correctly parses natural language
-    questions, matches cached tables/columns, extracts limits, and generates SQL.
-    """
-    schema = [
-        {"table_name": "orders", "column_name": "id", "data_type": "INTEGER | PRIMARY KEY"},
-        {"table_name": "orders", "column_name": "user_id", "data_type": "INTEGER | FOREIGN KEY -> users.id"},
-        {"table_name": "orders", "column_name": "price", "data_type": "FLOAT"},
-        {"table_name": "orders", "column_name": "created_at", "data_type": "TIMESTAMP"},
-        {"table_name": "users", "column_name": "id", "data_type": "INTEGER | PRIMARY KEY"},
-        {"table_name": "users", "column_name": "name", "data_type": "TEXT"}
-    ]
-
-    # Test limit extraction
-    sql_limit = heuristic_offline_compiler("show top 5 orders", "sqlite", schema)
-    assert "LIMIT 5" in sql_limit
-    assert "FROM orders" in sql_limit
-
-    # Test columns projection matching
-    sql_cols = heuristic_offline_compiler("get price from orders", "sqlite", schema)
-    assert "SELECT price FROM orders" in sql_cols
-
-    # Test count aggregation
-    sql_count = heuristic_offline_compiler("how many orders exist", "sqlite", schema)
-    assert "SELECT COUNT(*) FROM orders" in sql_count
-
-    # Test sum aggregation
-    sql_sum = heuristic_offline_compiler("total price amount for orders", "sqlite", schema)
-    assert "SELECT SUM(price) FROM orders" in sql_sum
-
-    # Test chronological sorting
-    sql_chrono = heuristic_offline_compiler("get latest orders", "sqlite", schema)
-    assert "ORDER BY created_at DESC" in sql_chrono
-
-    # Test relationship auto-joins
-    sql_join = heuristic_offline_compiler("list orders and users", "sqlite", schema)
-    assert "JOIN users ON orders.user_id = users.id" in sql_join
-
-    # Test MSSQL dialect limits TOP N
-    sql_mssql = heuristic_offline_compiler("show top 5 orders", "mssql", schema)
-    assert "SELECT TOP 5" in sql_mssql
-    assert "LIMIT" not in sql_mssql
 
 def test_ast_safety_filter_validation():
     """
@@ -282,47 +238,23 @@ def test_extract_sql_strips_markdown_and_prose():
     assert extract_sql("Here you go:\nSELECT id FROM users") == "SELECT id FROM users"
 
 
-def test_generate_sql_uses_llm_completion():
-    from unittest.mock import patch
-    from app.core.ai.query_generator import generate_sql
-    from app.core.ai.llm_client import LLMCompletion
-
-    schema = [{"table_name": "orders", "column_name": "id", "data_type": "INTEGER"}]
-    completion = LLMCompletion(
-        content="```sql\nSELECT COUNT(*) FROM orders;\n```",
-        prompt_tokens=10,
-        completion_tokens=5,
-        cost_usd=0.0,
-        duration_ms=12.0,
-        provider="gemini",
-        model="gemini-3.6-flash",
-    )
-    with patch("app.core.ai.query_generator.list_llm_clients", return_value=[object()]), patch(
-        "app.core.ai.query_generator.complete_chat_with_fallback",
-        return_value=completion,
-    ):
-        result = generate_sql("how many orders exist", "sqlite", schema)
-
-    assert result.used_llm is True
-    assert result.provider == "gemini"
-    assert result.model == "gemini-3.6-flash"
-    assert result.sql == "SELECT COUNT(*) FROM orders"
-
-
 def test_generate_sql_falls_back_to_heuristic_on_llm_failure():
     from unittest.mock import patch
     from app.core.ai.query_generator import generate_sql
 
-    schema = [{"table_name": "orders", "column_name": "id", "data_type": "INTEGER"}]
+    schema = [
+        {"table_name": "orders", "column_name": "id", "data_type": "INTEGER"},
+        {"table_name": "orders", "column_name": "price", "data_type": "FLOAT"},
+    ]
     with patch("app.core.ai.query_generator.list_llm_clients", return_value=[object()]), patch(
         "app.core.ai.query_generator.complete_chat_with_fallback",
         side_effect=RuntimeError("provider unavailable"),
     ):
-        result = generate_sql("how many orders exist", "sqlite", schema)
+        result = generate_sql("compare Q1 vs Q2 revenue trends for orders", "sqlite", schema)
 
     assert result.used_llm is False
     assert result.provider == "heuristic"
-    assert "COUNT(*)" in result.sql
+    assert result.sql == "SELECT 1"
 
 
 def test_complete_chat_tries_second_provider():

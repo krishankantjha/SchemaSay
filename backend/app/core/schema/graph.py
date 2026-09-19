@@ -136,14 +136,19 @@ class SchemaGraph:
                 )
         return edges
 
-    def join_path(self, from_table: str, to_table: str) -> Optional[List[JoinEdge]]:
-        start = self._resolve_table_key(from_table)
-        end = self._resolve_table_key(to_table)
-        if not start or not end:
-            return None
-        if start == end:
+    def primary_key_columns(self, table: str) -> List[str]:
+        table_key = self._resolve_table_key(table)
+        if not table_key:
             return []
+        return [col.name for col in self.tables[table_key] if col.is_primary_key]
 
+    def foreign_key_columns(self, table: str) -> List[str]:
+        table_key = self._resolve_table_key(table)
+        if not table_key:
+            return []
+        return [col.name for col in self.tables[table_key] if col.is_foreign_key]
+
+    def _adjacency(self) -> Dict[str, List[JoinEdge]]:
         adjacency: Dict[str, List[JoinEdge]] = {table: [] for table in self.tables}
         for edge in self.foreign_key_edges():
             adjacency[edge.from_table].append(edge)
@@ -155,21 +160,62 @@ class SchemaGraph:
                     to_column=edge.from_column,
                 )
             )
+        return adjacency
 
+    def join_path(self, from_table: str, to_table: str) -> Optional[List[JoinEdge]]:
+        paths = self.all_join_paths(from_table, to_table, max_depth=6, max_paths=1)
+        return paths[0] if paths else None
+
+    def all_join_paths(
+        self,
+        from_table: str,
+        to_table: str,
+        *,
+        max_depth: int = 6,
+        max_paths: int = 8,
+    ) -> List[List[JoinEdge]]:
+        """Return shortest join paths (BFS), up to max_paths alternatives at minimum hop count."""
+        start = self._resolve_table_key(from_table)
+        end = self._resolve_table_key(to_table)
+        if not start or not end:
+            return []
+        if start == end:
+            return [[]]
+
+        adjacency = self._adjacency()
         queue = deque([(start, [])])
-        visited = {start}
+        visited_depth: Dict[str, int] = {start: 0}
+        found: List[List[JoinEdge]] = []
+        shortest_len: Optional[int] = None
 
         while queue:
             current, path = queue.popleft()
+            if shortest_len is not None and len(path) > shortest_len:
+                continue
+            if len(path) >= max_depth:
+                continue
+
             for edge in adjacency.get(current, []):
                 next_table = edge.to_table
                 next_path = path + [edge]
+                path_len = len(next_path)
+
                 if next_table == end:
-                    return next_path
-                if next_table not in visited:
-                    visited.add(next_table)
-                    queue.append((next_table, next_path))
-        return None
+                    if shortest_len is None:
+                        shortest_len = path_len
+                    if path_len == shortest_len:
+                        found.append(next_path)
+                        if len(found) >= max_paths:
+                            return found
+                    continue
+
+                prev_depth = visited_depth.get(next_table)
+                if prev_depth is not None and prev_depth <= path_len:
+                    continue
+                visited_depth[next_table] = path_len
+                queue.append((next_table, next_path))
+
+        return found
 
     def to_tree(self) -> List[dict]:
         tables = []

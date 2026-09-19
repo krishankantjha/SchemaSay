@@ -1,3 +1,6 @@
+import json
+from typing import List
+
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text
 from sqlalchemy.sql import func
 
@@ -25,5 +28,29 @@ class QueryFeedback(Base):
     corrected_sql = Column(Text, nullable=True)
     rating = Column(String, nullable=False)  # thumbs_up, thumbs_down, corrected
     comment = Column(Text, nullable=True)
+    feedback_categories_json = Column(Text, nullable=True)
+    correlation_id = Column(String, nullable=True, index=True)
+    result_row_count = Column(Integer, nullable=True)
+    result_columns_json = Column(Text, nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    @property
+    def feedback_categories(self) -> List[str]:
+        if not self.feedback_categories_json:
+            return []
+        try:
+            parsed = json.loads(self.feedback_categories_json)
+            return parsed if isinstance(parsed, list) else []
+        except json.JSONDecodeError:
+            return []
+
+    @property
+    def result_columns(self) -> List[str]:
+        if not self.result_columns_json:
+            return []
+        try:
+            parsed = json.loads(self.result_columns_json)
+            return parsed if isinstance(parsed, list) else []
+        except json.JSONDecodeError:
+            return []

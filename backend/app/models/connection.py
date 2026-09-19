@@ -31,6 +31,25 @@ class DatabaseConnection(Base):
     metrics = relationship("MetricDefinition", back_populates="connection", cascade="all, delete-orphan")
     policy = relationship("ConnectionPolicy", back_populates="connection", cascade="all, delete-orphan", uselist=False)
     audit_logs = relationship("QueryAuditLog", back_populates="connection")
+    schema_aliases = relationship("ConnectionSchemaAlias", back_populates="connection", cascade="all, delete-orphan")
+
+
+class ConnectionSchemaAlias(Base):
+    """
+    Per-connection natural-language aliases for heuristic table/column resolution.
+    """
+    __tablename__ = "connection_schema_aliases"
+
+    id = Column(Integer, primary_key=True)
+    connection_id = Column(Integer, ForeignKey("database_connections.id", ondelete="CASCADE"), nullable=False, index=True)
+    alias_type = Column(String, nullable=False)  # table | column
+    alias_token = Column(String, nullable=False, index=True)
+    target_table = Column(String, nullable=False)
+    target_column = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    connection = relationship("DatabaseConnection", back_populates="schema_aliases")
+
 
 class DatabaseSchemaCache(Base):
     """
@@ -91,6 +110,9 @@ class QueryAuditLog(Base):
     row_count = Column(Integer, nullable=True)
     resolution_source = Column(String, nullable=True)
     metric_id = Column(Integer, nullable=True)
+    heuristic_tier = Column(String, nullable=True)
+    heuristic_compile_confidence = Column(Integer, nullable=True)
+    eval_telemetry_json = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     connection = relationship("DatabaseConnection", back_populates="audit_logs")

@@ -10,6 +10,13 @@ class JoinInfo(BaseModel):
     to_column: str
 
 
+class ComponentConfidence(BaseModel):
+    table: float = 0.0
+    column: float = 0.0
+    join: float = 0.0
+    aggregation: float = 0.0
+
+
 class QueryExplanation(BaseModel):
     summary: str
     assumptions: List[str] = Field(default_factory=list)
@@ -27,6 +34,13 @@ class QueryExplanation(BaseModel):
     learning_examples_used: int = 0
     llm_provider: Optional[str] = None
     llm_model: Optional[str] = None
+    heuristic_tier: Optional[str] = None
+    heuristic_intent: Optional[str] = None
+    routing_decision: Optional[str] = None
+    validation_passed: Optional[bool] = None
+    calibrated_confidence: Optional[int] = None
+    component_confidence: Optional[ComponentConfidence] = None
+    validation_issues: List[str] = Field(default_factory=list)
 
 
 class QueryRequest(BaseModel):

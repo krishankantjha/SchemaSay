@@ -81,6 +81,13 @@ def build_query_explanation(
     learning_examples_used: int = 0,
     llm_provider: Optional[str] = None,
     llm_model: Optional[str] = None,
+    heuristic_tier: Optional[str] = None,
+    heuristic_intent: Optional[str] = None,
+    routing_decision: Optional[str] = None,
+    validation_passed: Optional[bool] = None,
+    calibrated_confidence: Optional[int] = None,
+    component_confidence: Optional[dict] = None,
+    validation_issues: Optional[List[str]] = None,
 ) -> dict:
     tables_used = grounding.tables_referenced or [
         table for table in graph.tables if table.lower() in sql.lower()
@@ -95,8 +102,16 @@ def build_query_explanation(
         assumptions.append("SQL was adapted from a verified historical example for this connection.")
     elif used_llm:
         assumptions.append("SQL was generated from your question using the synced schema.")
+    elif routing_decision == "heuristic_validate":
+        assumptions.append("SQL was compiled heuristically and passed semantic validation before execution.")
+    elif routing_decision == "fallback":
+        assumptions.append("SQL fell back to the heuristic compiler after LLM generation failed.")
     else:
         assumptions.append("SQL was generated using built-in schema rules.")
+
+    if validation_issues:
+        for issue in validation_issues[:3]:
+            assumptions.append(f"Validation note: {issue}.")
 
     if learning_examples_used > 0:
         assumptions.append(
@@ -134,4 +149,11 @@ def build_query_explanation(
         "learning_examples_used": learning_examples_used,
         "llm_provider": llm_provider,
         "llm_model": llm_model,
+        "heuristic_tier": heuristic_tier,
+        "heuristic_intent": heuristic_intent,
+        "routing_decision": routing_decision,
+        "validation_passed": validation_passed,
+        "calibrated_confidence": calibrated_confidence,
+        "component_confidence": component_confidence,
+        "validation_issues": validation_issues or [],
     }

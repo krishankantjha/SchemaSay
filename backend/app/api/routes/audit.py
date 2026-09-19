@@ -1,15 +1,17 @@
 import json
+from dataclasses import asdict
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.api.routes.auth import get_current_user
+from app.core.eval.telemetry import EvalTelemetry
 from app.core.pipeline import PipelineError, QueryPipeline
 from app.database import get_db
 from app.models.connection import DatabaseConnection, QueryAuditLog
 from app.models.user import User
-from app.schemas.governance import AuditLogDetailResponse, AuditReplayResponse
+from app.schemas.governance import AuditLogDetailResponse, AuditReplayResponse, AuditTelemetryResponse
 
 router = APIRouter(prefix="/audit", tags=["Query Audit & Governance"])
 
@@ -21,6 +23,9 @@ def _audit_to_response(log: QueryAuditLog) -> AuditLogDetailResponse:
             tables_accessed = json.loads(log.tables_accessed_json)
         except json.JSONDecodeError:
             tables_accessed = []
+
+    telemetry = EvalTelemetry.from_json(log.eval_telemetry_json)
+    eval_telemetry = AuditTelemetryResponse(**asdict(telemetry)) if telemetry else None
 
     return AuditLogDetailResponse(
         id=log.id,
@@ -38,6 +43,9 @@ def _audit_to_response(log: QueryAuditLog) -> AuditLogDetailResponse:
         row_count=log.row_count,
         resolution_source=log.resolution_source,
         metric_id=log.metric_id,
+        heuristic_tier=log.heuristic_tier,
+        heuristic_compile_confidence=log.heuristic_compile_confidence,
+        eval_telemetry=eval_telemetry,
         created_at=log.created_at,
     )
 

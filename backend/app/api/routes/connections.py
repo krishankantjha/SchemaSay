@@ -6,9 +6,10 @@ from sqlalchemy.orm import Session
 
 logger = logging.getLogger("schemasay.connections")
 
+from app.config import settings
 from app.database import get_db
 from app.models.user import User
-from app.models.connection import DatabaseConnection, QueryAuditLog, DatabaseSchemaCache
+from app.models.connection import ConnectionSchemaAlias, DatabaseConnection, QueryAuditLog, DatabaseSchemaCache
 from app.models.governance import ConnectionPolicy
 from app.schemas.connection import (
     ConnectionCreate,
@@ -17,15 +18,105 @@ from app.schemas.connection import (
     ConnectionTestResponse,
     ConnectionUpdate,
     AuditLogResponse,
+    SchemaAliasCreate,
+    SchemaAliasResponse,
+    SchemaAliasUpdate,
 )
 from app.schemas.governance import ConnectionPolicyResponse, ConnectionPolicyUpdate
 from app.api.routes.auth import get_current_user
 from app.core.connections.encryptor import decrypt_password, encrypt_password
 from app.core.connections.connector import test_connection, process_file_upload, dispose_connection_engine, get_connection
 from app.core.schema.sync_service import sync_connection_schema_cache
+from app.core.schema.alias_validation import (
+    load_schema_index,
+    normalize_alias_token,
+    resolve_schema_target,
+    validate_alias_token,
+)
 from app.core.security.connection_policy import validate_database_target, validate_remote_host
 
 router = APIRouter(prefix="/connections", tags=["Database Connections"])
+
+
+def _get_user_connection(db: Session, connection_id: int, user_id: int) -> DatabaseConnection:
+    connection = db.query(DatabaseConnection).filter(
+        DatabaseConnection.id == connection_id,
+        DatabaseConnection.user_id == user_id,
+    ).first()
+    if not connection:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Database connection not found")
+    return connection
+
+
+def _get_user_alias(
+    db: Session,
+    connection_id: int,
+    alias_id: int,
+    user_id: int,
+) -> ConnectionSchemaAlias:
+    alias = (
+        db.query(ConnectionSchemaAlias)
+        .filter(
+            ConnectionSchemaAlias.id == alias_id,
+            ConnectionSchemaAlias.connection_id == connection_id,
+        )
+        .first()
+    )
+    if not alias:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Schema alias not found")
+    _get_user_connection(db, connection_id, user_id)
+    return alias
+
+
+def _alias_to_response(alias: ConnectionSchemaAlias) -> SchemaAliasResponse:
+    return SchemaAliasResponse(
+        id=alias.id,
+        connection_id=alias.connection_id,
+        alias_type=alias.alias_type,
+        alias_token=alias.alias_token,
+        target_table=alias.target_table,
+        target_column=alias.target_column,
+        created_at=alias.created_at,
+    )
+
+
+def _validate_alias_payload(
+    db: Session,
+    connection_id: int,
+    alias_type: str,
+    alias_token: str,
+    target_table: str,
+    target_column: Optional[str],
+    exclude_alias_id: Optional[int] = None,
+) -> tuple[str, str, Optional[str]]:
+    token_error = validate_alias_token(alias_token)
+    if token_error:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=token_error)
+
+    normalized_token = normalize_alias_token(alias_token)
+    schema_index = load_schema_index(db, connection_id)
+    canonical_table, canonical_column, target_error = resolve_schema_target(
+        schema_index,
+        target_table,
+        target_column if alias_type == "column" else None,
+    )
+    if target_error:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=target_error)
+
+    duplicate_query = db.query(ConnectionSchemaAlias).filter(
+        ConnectionSchemaAlias.connection_id == connection_id,
+        ConnectionSchemaAlias.alias_type == alias_type,
+        ConnectionSchemaAlias.alias_token == normalized_token,
+    )
+    if exclude_alias_id is not None:
+        duplicate_query = duplicate_query.filter(ConnectionSchemaAlias.id != exclude_alias_id)
+    if duplicate_query.first():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Alias '{normalized_token}' already exists for this connection",
+        )
+
+    return normalized_token, canonical_table, canonical_column
 
 @router.post("/test", status_code=status.HTTP_200_OK)
 def test_db_connection(payload: ConnectionTest, current_user: User = Depends(get_current_user)):
@@ -369,6 +460,93 @@ def get_query_history(
     return query.order_by(
         QueryAuditLog.created_at.desc()
     ).offset((page_val - 1) * limit_val).limit(limit_val).all()
+
+
+@router.get("/{connection_id}/aliases", response_model=List[SchemaAliasResponse])
+def list_connection_aliases(
+    connection_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _get_user_connection(db, connection_id, current_user.id)
+    aliases = (
+        db.query(ConnectionSchemaAlias)
+        .filter(ConnectionSchemaAlias.connection_id == connection_id)
+        .order_by(ConnectionSchemaAlias.alias_type, ConnectionSchemaAlias.alias_token)
+        .all()
+    )
+    return [_alias_to_response(alias) for alias in aliases]
+
+
+@router.post("/{connection_id}/aliases", response_model=SchemaAliasResponse, status_code=status.HTTP_201_CREATED)
+def create_connection_alias(
+    connection_id: int,
+    payload: SchemaAliasCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _get_user_connection(db, connection_id, current_user.id)
+    normalized_token, canonical_table, canonical_column = _validate_alias_payload(
+        db=db,
+        connection_id=connection_id,
+        alias_type=payload.alias_type,
+        alias_token=payload.alias_token,
+        target_table=payload.target_table,
+        target_column=payload.target_column,
+    )
+
+    alias = ConnectionSchemaAlias(
+        connection_id=connection_id,
+        alias_type=payload.alias_type,
+        alias_token=normalized_token,
+        target_table=canonical_table,
+        target_column=canonical_column,
+    )
+    db.add(alias)
+    db.commit()
+    db.refresh(alias)
+    return _alias_to_response(alias)
+
+
+@router.put("/{connection_id}/aliases/{alias_id}", response_model=SchemaAliasResponse)
+def update_connection_alias(
+    connection_id: int,
+    alias_id: int,
+    payload: SchemaAliasUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    alias = _get_user_alias(db, connection_id, alias_id, current_user.id)
+    normalized_token, canonical_table, canonical_column = _validate_alias_payload(
+        db=db,
+        connection_id=connection_id,
+        alias_type=alias.alias_type,
+        alias_token=payload.alias_token,
+        target_table=payload.target_table,
+        target_column=payload.target_column if alias.alias_type == "column" else None,
+        exclude_alias_id=alias.id,
+    )
+
+    alias.alias_token = normalized_token
+    alias.target_table = canonical_table
+    alias.target_column = canonical_column if alias.alias_type == "column" else None
+
+    db.commit()
+    db.refresh(alias)
+    return _alias_to_response(alias)
+
+
+@router.delete("/{connection_id}/aliases/{alias_id}", status_code=status.HTTP_200_OK)
+def delete_connection_alias(
+    connection_id: int,
+    alias_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    alias = _get_user_alias(db, connection_id, alias_id, current_user.id)
+    db.delete(alias)
+    db.commit()
+    return {"message": "Schema alias deleted"}
 
 
 @router.get("/{connection_id}/policy", response_model=ConnectionPolicyResponse)

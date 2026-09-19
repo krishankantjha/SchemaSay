@@ -129,6 +129,54 @@ def test_learning_example_used_in_assistant_query(client, db, monkeypatch):
         os.remove(temp_db_path)
 
 
+def test_negative_feedback_requires_reason_or_comment(client, db):
+    headers = _auth_headers(client)
+    temp_db_path = _create_orders_db()
+    create_conn = client.post(
+        "/api/v1/connections/",
+        json={"name": "Feedback Validation DB", "db_type": "sqlite", "database_name": temp_db_path},
+        headers=headers,
+    )
+    connection_id = create_conn.json()["id"]
+
+    missing_reason = client.post(
+        "/api/v1/feedback/",
+        json={
+            "connection_id": connection_id,
+            "question": "Show total revenue by region",
+            "generated_sql": "SELECT region, SUM(total_amount) FROM orders GROUP BY region",
+            "rating": "thumbs_down",
+        },
+        headers=headers,
+    )
+    assert missing_reason.status_code == status.HTTP_400_BAD_REQUEST
+
+    with_context = client.post(
+        "/api/v1/feedback/",
+        json={
+            "connection_id": connection_id,
+            "question": "Show total revenue by region",
+            "generated_sql": "SELECT region, SUM(total_amount) FROM orders GROUP BY region",
+            "rating": "thumbs_down",
+            "feedback_categories": ["incomplete"],
+            "comment": "Need monthly breakdown too",
+            "result_row_count": 2,
+            "result_columns": ["region", "total_amount"],
+            "correlation_id": "corr-test-123",
+        },
+        headers=headers,
+    )
+    assert with_context.status_code == status.HTTP_201_CREATED
+    payload = with_context.json()
+    assert payload["feedback_categories"] == ["incomplete"]
+    assert payload["result_row_count"] == 2
+    assert payload["correlation_id"] == "corr-test-123"
+
+    client.delete(f"/api/v1/connections/{connection_id}", headers=headers)
+    if os.path.exists(temp_db_path):
+        os.remove(temp_db_path)
+
+
 def test_corrected_sql_must_pass_safety_validation(client, db):
     headers = _auth_headers(client)
     temp_db_path = _create_orders_db()

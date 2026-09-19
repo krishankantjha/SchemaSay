@@ -1,0 +1,191 @@
+[
+  {
+    "id": "core_count_orders",
+    "category": "core",
+    "question": "how many orders exist",
+    "dialects": ["sqlite"],
+    "reference_sql": "SELECT COUNT(*) AS cnt FROM orders",
+    "expect_sql_contains": ["COUNT", "orders"],
+    "expect_escalate": false,
+    "expect_tier": "L2",
+    "regression": true
+  },
+  {
+    "id": "core_sum_revenue",
+    "category": "core",
+    "question": "total revenue for orders",
+    "dialects": ["sqlite"],
+    "reference_sql": "SELECT SUM(price) AS total FROM orders",
+    "expect_sql_contains": ["SUM", "price"],
+    "expect_escalate": false,
+    "regression": true
+  },
+  {
+    "id": "core_list_orders_limit",
+    "category": "core",
+    "question": "show top 5 orders",
+    "dialects": ["sqlite"],
+    "reference_sql": "SELECT created_at FROM orders ORDER BY created_at DESC LIMIT 5",
+    "expect_sql_contains": ["orders", "LIMIT 5"],
+    "expect_escalate": false,
+    "regression": true
+  },
+  {
+    "id": "core_group_by_month",
+    "category": "core",
+    "question": "total revenue by month for orders",
+    "dialects": ["sqlite"],
+    "reference_sql": "SELECT SUM(price) FROM orders GROUP BY strftime('%Y-%m', created_at)",
+    "expect_sql_contains": ["GROUP BY", "SUM"],
+    "expect_tier": "L3",
+    "expect_escalate": false,
+    "regression": true
+  },
+  {
+    "id": "core_filter_gt",
+    "category": "core",
+    "question": "orders where price greater than 50",
+    "dialects": ["sqlite"],
+    "reference_sql": "SELECT price FROM orders WHERE price > 50",
+    "expect_sql_contains": ["WHERE", "price", "50"],
+    "expect_escalate": false,
+    "regression": true
+  },
+  {
+    "id": "paraphrase_count_orders_a",
+    "category": "paraphrase",
+    "paraphrase_group": "count_orders",
+    "question": "what is the total number of orders",
+    "dialects": ["sqlite"],
+    "reference_sql": "SELECT COUNT(*) AS cnt FROM orders",
+    "expect_sql_contains": ["COUNT", "orders"],
+    "expect_escalate": false
+  },
+  {
+    "id": "paraphrase_count_orders_b",
+    "category": "paraphrase",
+    "paraphrase_group": "count_orders",
+    "question": "count all orders",
+    "dialects": ["sqlite"],
+    "reference_sql": "SELECT COUNT(*) AS cnt FROM orders",
+    "expect_sql_contains": ["COUNT", "orders"],
+    "expect_escalate": false
+  },
+  {
+    "id": "paraphrase_revenue_a",
+    "category": "paraphrase",
+    "paraphrase_group": "sum_revenue",
+    "question": "sum of sales for orders",
+    "dialects": ["sqlite"],
+    "reference_sql": "SELECT SUM(price) AS total FROM orders",
+    "expect_sql_contains": ["SUM"],
+    "expect_escalate": false
+  },
+  {
+    "id": "paraphrase_revenue_b",
+    "category": "paraphrase",
+    "paraphrase_group": "sum_revenue",
+    "question": "total amount from orders",
+    "dialects": ["sqlite"],
+    "reference_sql": "SELECT SUM(price) AS total FROM orders",
+    "expect_sql_contains": ["SUM"],
+    "expect_escalate": false
+  },
+  {
+    "id": "join_orders_users",
+    "category": "core",
+    "question": "list orders and users",
+    "dialects": ["sqlite"],
+    "expect_sql_contains": ["JOIN", "orders", "users"],
+    "expect_escalate": false,
+    "regression": true
+  },
+  {
+    "id": "m2m_students_courses",
+    "category": "core",
+    "question": "list students and courses",
+    "dialects": ["sqlite"],
+    "expect_sql_contains": ["students", "courses", "JOIN"],
+    "expect_escalate": false
+  },
+  {
+    "id": "top_products_revenue",
+    "category": "core",
+    "question": "top 3 products by revenue",
+    "dialects": ["sqlite"],
+    "reference_sql": "SELECT products.name, SUM(order_items.price) AS rev FROM products JOIN order_items ON products.id = order_items.product_id GROUP BY products.name ORDER BY rev DESC LIMIT 3",
+    "expect_sql_contains": ["products", "SUM", "LIMIT 3"],
+    "expect_escalate": false,
+    "regression": true
+  },
+  {
+    "id": "dialect_mssql_top",
+    "category": "dialect",
+    "question": "show top 5 orders",
+    "dialects": ["mssql"],
+    "reference_sql": "SELECT TOP 5 created_at FROM orders ORDER BY created_at DESC",
+    "expect_sql_contains": ["TOP 5", "orders"],
+    "expect_escalate": false
+  },
+  {
+    "id": "dialect_sqlite_limit",
+    "category": "dialect",
+    "question": "show top 5 orders",
+    "dialects": ["sqlite"],
+    "reference_sql": "SELECT created_at FROM orders ORDER BY created_at DESC LIMIT 5",
+    "expect_sql_contains": ["LIMIT 5"],
+    "expect_escalate": false
+  },
+  {
+    "id": "adversarial_l4_trends",
+    "category": "adversarial",
+    "question": "compare Q1 vs Q2 revenue trends for orders",
+    "dialects": ["sqlite"],
+    "expect_escalate": true,
+    "expect_tier": "L4",
+    "allow_no_sql": true
+  },
+  {
+    "id": "adversarial_ambiguous",
+    "category": "adversarial",
+    "question": "show foo and bar records",
+    "dialects": ["sqlite"],
+    "expect_escalate": true,
+    "allow_no_sql": true
+  },
+  {
+    "id": "adversarial_empty_schema_question",
+    "category": "adversarial",
+    "question": "show me everything",
+    "dialects": ["sqlite"],
+    "expect_escalate": true,
+    "allow_no_sql": true
+  },
+  {
+    "id": "adversarial_injection",
+    "category": "adversarial",
+    "question": "orders; DROP TABLE users; --",
+    "dialects": ["sqlite"],
+    "expect_escalate": true,
+    "allow_no_sql": true
+  },
+  {
+    "id": "having_count_by_status",
+    "category": "core",
+    "question": "count orders by status having more than 1",
+    "dialects": ["sqlite"],
+    "reference_sql": "SELECT COUNT(*) FROM orders GROUP BY status HAVING COUNT(*) > 1",
+    "expect_sql_contains": ["GROUP BY", "HAVING", "COUNT"],
+    "expect_escalate": false,
+    "regression": true
+  },
+  {
+    "id": "distinct_users_on_orders",
+    "category": "core",
+    "question": "count distinct user_id for orders",
+    "dialects": ["sqlite"],
+    "reference_sql": "SELECT COUNT(DISTINCT user_id) AS c FROM orders",
+    "expect_sql_contains": ["COUNT(DISTINCT", "user_id"],
+    "expect_escalate": false
+  }
+]

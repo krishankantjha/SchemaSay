@@ -8,8 +8,10 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.core.ai.executor import execute_assistant_query
+from app.core.ai.heuristic_aliases import load_alias_context
 from app.core.ai.query_generator import generate_sql
 from app.core.audit.audit_service import log_audit_transaction, AuditMetadata
+from app.core.eval.telemetry import EvalTelemetry, detect_false_confidence
 from app.core.explanation.builder import build_query_explanation
 from app.core.explanation.confidence import compute_confidence_score
 from app.core.governance.policies import evaluate_sql_policy
@@ -77,6 +79,9 @@ class QueryPipeline:
         tables_accessed: Optional[List[str]],
         resolution_source: Optional[str],
         metric_id: Optional[int],
+        heuristic_tier: Optional[str] = None,
+        heuristic_compile_confidence: Optional[int] = None,
+        eval_telemetry_json: Optional[str] = None,
     ) -> AuditMetadata:
         return AuditMetadata(
             correlation_id=correlation_id,
@@ -85,6 +90,9 @@ class QueryPipeline:
             tables_accessed=tables_accessed,
             resolution_source=resolution_source,
             metric_id=metric_id,
+            heuristic_tier=heuristic_tier,
+            heuristic_compile_confidence=heuristic_compile_confidence,
+            eval_telemetry_json=eval_telemetry_json,
         )
 
     def run_natural_language(
@@ -120,6 +128,14 @@ class QueryPipeline:
         used_llm = False
         llm_provider = None
         llm_model = None
+        heuristic_tier = None
+        heuristic_compile_confidence = None
+        heuristic_intent = None
+        routing_decision = None
+        validation_passed = None
+        calibrated_confidence = None
+        component_confidence = None
+        validation_issues: List[str] = []
         learning_examples_used = 0
 
         if resolved:
@@ -153,11 +169,13 @@ class QueryPipeline:
                 generated_sql = direct_example.sql
                 resolution_source = "learning_example"
             else:
+                alias_context = load_alias_context(self.db, connection.id)
                 generation = generate_sql(
                     question=question,
                     db_type=connection.db_type,
                     schema_metadata=schema_metadata,
                     verified_examples=verified_payload,
+                    alias_context=alias_context,
                 )
                 generated_sql = generation.sql
                 used_llm = generation.used_llm
@@ -167,8 +185,20 @@ class QueryPipeline:
                     resolution_source = "llm"
                     llm_provider = generation.provider
                     llm_model = generation.model
+                    routing_decision = generation.routing_decision
+                    validation_passed = generation.validation_passed
                 else:
                     resolution_source = "heuristic"
+                    heuristic_tier = generation.heuristic_tier
+                    heuristic_intent = generation.heuristic_intent
+                    routing_decision = generation.routing_decision
+                    validation_passed = generation.validation_passed
+                    component_confidence = generation.component_confidence
+                    validation_issues = generation.validation_issues or []
+                    if generation.heuristic_confidence is not None:
+                        heuristic_compile_confidence = int(round(generation.heuristic_confidence * 100))
+                    if generation.calibrated_confidence is not None:
+                        calibrated_confidence = int(round(generation.calibrated_confidence * 100))
 
         return self._run_execution_path(
             user_id=user_id,
@@ -186,6 +216,14 @@ class QueryPipeline:
             learning_examples_used=learning_examples_used,
             llm_provider=llm_provider,
             llm_model=llm_model,
+            heuristic_tier=heuristic_tier,
+            heuristic_compile_confidence=heuristic_compile_confidence,
+            heuristic_intent=heuristic_intent,
+            routing_decision=routing_decision,
+            validation_passed=validation_passed,
+            calibrated_confidence=calibrated_confidence,
+            component_confidence=component_confidence,
+            validation_issues=validation_issues,
         )
 
     def run_raw_sql(
@@ -226,6 +264,14 @@ class QueryPipeline:
         learning_examples_used: int = 0,
         llm_provider: Optional[str] = None,
         llm_model: Optional[str] = None,
+        heuristic_tier: Optional[str] = None,
+        heuristic_compile_confidence: Optional[int] = None,
+        heuristic_intent: Optional[str] = None,
+        routing_decision: Optional[str] = None,
+        validation_passed: Optional[bool] = None,
+        calibrated_confidence: Optional[int] = None,
+        component_confidence: Optional[dict] = None,
+        validation_issues: Optional[List[str]] = None,
     ) -> PipelineResult:
         policy = self._load_connection_policy(connection.id, user_id)
 
@@ -264,6 +310,25 @@ class QueryPipeline:
             used_llm=used_llm,
             semantic_metric=resolution_source == "semantic_metric",
         )
+        if calibrated_confidence is not None and resolution_source == "heuristic":
+            confidence = max(confidence, calibrated_confidence)
+
+        eval_telemetry = EvalTelemetry(
+            routing_decision=routing_decision,
+            validation_passed=validation_passed,
+            calibrated_confidence=calibrated_confidence,
+            heuristic_intent=heuristic_intent,
+            used_llm=used_llm,
+            validation_issues=validation_issues or [],
+            component_confidence=component_confidence,
+            false_confidence=detect_false_confidence(
+                calibrated_confidence=(calibrated_confidence or 0) / 100.0 if calibrated_confidence else None,
+                validation_passed=validation_passed,
+                execution_match=None,
+                grounded=grounding.valid,
+            ),
+        )
+        eval_telemetry_json = eval_telemetry.to_json()
 
         policy_result = evaluate_sql_policy(sql, graph, policy, confidence=confidence)
         if not policy_result.allowed:
@@ -306,8 +371,17 @@ class QueryPipeline:
             learning_examples_used=learning_examples_used,
             llm_provider=llm_provider,
             llm_model=llm_model,
+            heuristic_tier=heuristic_tier,
+            heuristic_intent=heuristic_intent,
+            routing_decision=routing_decision,
+            validation_passed=validation_passed,
+            calibrated_confidence=calibrated_confidence,
+            component_confidence=component_confidence,
+            validation_issues=validation_issues,
         )
         explanation["warnings"].extend(policy_result.warnings)
+        if validation_passed is False:
+            explanation["warnings"].append("Heuristic validation did not fully pass before execution.")
 
         if settings.BLOCK_ON_GROUNDING_FAILURE and not grounding.valid:
             error_message = "; ".join(grounding.warnings) or "SQL is not grounded in the cached schema."
@@ -371,6 +445,9 @@ class QueryPipeline:
             tables_accessed=grounding.tables_referenced,
             resolution_source=resolution_source,
             metric_id=metric_id,
+            heuristic_tier=heuristic_tier,
+            heuristic_compile_confidence=heuristic_compile_confidence,
+            eval_telemetry_json=eval_telemetry_json,
         )
 
         success, error_or_sql, results, duration_ms = execute_assistant_query(

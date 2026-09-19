@@ -52,6 +52,10 @@ def submit_feedback(
             corrected_sql=payload.corrected_sql,
             comment=payload.comment,
             audit_log_id=payload.audit_log_id,
+            correlation_id=payload.correlation_id,
+            feedback_categories=payload.feedback_categories,
+            result_row_count=payload.result_row_count,
+            result_columns=payload.result_columns,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))

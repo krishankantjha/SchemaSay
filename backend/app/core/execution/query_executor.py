@@ -71,9 +71,13 @@ def parse_database_exception(err: Exception, db_type: str) -> str:
 def _validate_frame_limits(frame: pd.DataFrame) -> None:
     if len(frame.columns) > settings.MAX_QUERY_COLUMNS:
         raise ValueError("Query result exceeded the maximum column limit")
-    for column in frame.columns:
-        lengths = frame[column].astype("string").str.len()
-        if not lengths.empty and lengths.max(skipna=True) > settings.MAX_QUERY_CELL_BYTES:
+    for idx in range(len(frame.columns)):
+        series = frame.iloc[:, idx]
+        lengths = series.astype("string").str.len()
+        if lengths.empty:
+            continue
+        max_len = lengths.max(skipna=True)
+        if pd.notna(max_len) and max_len > settings.MAX_QUERY_CELL_BYTES:
             raise ValueError("Query result contains a value larger than the maximum cell size")
 
 

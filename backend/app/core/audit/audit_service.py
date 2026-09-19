@@ -21,6 +21,9 @@ class AuditMetadata:
     row_count: Optional[int] = None
     resolution_source: Optional[str] = None
     metric_id: Optional[int] = None
+    heuristic_tier: Optional[str] = None
+    heuristic_compile_confidence: Optional[int] = None
+    eval_telemetry_json: Optional[str] = None
 
 
 def log_audit_transaction(
@@ -60,6 +63,9 @@ def log_audit_transaction(
             audit_log.row_count = metadata.row_count
             audit_log.resolution_source = metadata.resolution_source
             audit_log.metric_id = metadata.metric_id
+            audit_log.heuristic_tier = metadata.heuristic_tier
+            audit_log.heuristic_compile_confidence = metadata.heuristic_compile_confidence
+            audit_log.eval_telemetry_json = metadata.eval_telemetry_json
             if metadata.tables_accessed is not None:
                 audit_log.tables_accessed_json = json.dumps(metadata.tables_accessed)
 

@@ -7,6 +7,8 @@ from sqlalchemy import create_engine, text
 from app.core.governance.pii import detect_pii_column
 from app.core.governance.policies import evaluate_sql_policy
 from app.core.schema.graph import SchemaGraph
+from app.core.eval.telemetry import EvalTelemetry
+from app.models.connection import QueryAuditLog
 from app.models.governance import ConnectionPolicy
 
 
@@ -118,6 +120,44 @@ def test_connection_policy_api_and_enforcement(client, db):
     client.delete(f"/api/v1/connections/{connection_id}", headers=headers)
     if os.path.exists(temp_db_path):
         os.remove(temp_db_path)
+
+
+def test_audit_exposes_pipeline_telemetry(client, db):
+    headers = _auth_headers(client)
+    user_id = client.get("/api/v1/auth/me", headers=headers).json()["id"]
+    telemetry = EvalTelemetry(
+        routing_decision="heuristic_validate",
+        validation_passed=False,
+        calibrated_confidence=82,
+        heuristic_intent="aggregation",
+        used_llm=False,
+        false_confidence=True,
+        validation_issues=["missing_group_by:orders.status"],
+    )
+    audit_log = QueryAuditLog(
+        user_id=user_id,
+        connection_id=None,
+        question="Total revenue by status",
+        sql_query="SELECT status, SUM(price) FROM orders GROUP BY status",
+        execution_duration_ms=15,
+        status="success",
+        heuristic_tier="L2",
+        heuristic_compile_confidence=78,
+        eval_telemetry_json=telemetry.to_json(),
+    )
+    db.add(audit_log)
+    db.commit()
+    db.refresh(audit_log)
+
+    detail_res = client.get(f"/api/v1/audit/{audit_log.id}", headers=headers)
+    assert detail_res.status_code == status.HTTP_200_OK
+    payload = detail_res.json()
+    assert payload["heuristic_tier"] == "L2"
+    assert payload["heuristic_compile_confidence"] == 78
+    assert payload["eval_telemetry"]["routing_decision"] == "heuristic_validate"
+    assert payload["eval_telemetry"]["validation_passed"] is False
+    assert payload["eval_telemetry"]["false_confidence"] is True
+    assert payload["eval_telemetry"]["validation_issues"] == ["missing_group_by:orders.status"]
 
 
 def test_audit_list_detail_and_replay(client, db):
