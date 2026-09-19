@@ -1,123 +1,325 @@
 # SchemaSay
 
-SchemaSay is a natural-language analytics application for querying approved databases and presenting bounded results with charts and AI-generated summaries. The backend validates generated and manually supplied SQL, executes it through SQLAlchemy, records query history, and exposes a FastAPI API. The frontend is a Streamlit wrapper around a bundled HTML/CSS/JavaScript application.
+> Ask questions in plain English and get answers from your database — with charts, explanations, and an audit trail.
 
-## Security model
+SchemaSay is a full-stack analytics app. You connect a database, ask questions in natural language or run SQL by hand, and review results with trust signals and history. The backend validates SQL, runs read-only queries, and logs each request. The frontend is a React workbench for day-to-day use.
 
-SchemaSay is designed for **approved database targets**, not unrestricted arbitrary connectivity. In a hosted deployment, operators should configure an explicit `ALLOWED_DB_HOSTS` allowlist and enforce corresponding network egress rules. Private, loopback, link-local, reserved, multicast, and unspecified remote addresses are blocked unless an operator explicitly allowlists the destination. SQLite paths are confined to the application-owned data directory by default; additional roots must be configured with absolute paths.
+**Demo:** [TODO: Add live demo URL or screen recording link]
 
-The SQL gate accepts one parsed, dialect-specific `SELECT` statement only. It rejects stacked statements, writes, `UNION`, transaction/control statements, row-locking clauses, file-access functions, timing functions, procedures, and SQLite pragmas. The target database credentials should still be read-only because application parsing is a defense-in-depth control rather than a database authorization boundary.
+---
 
-The backend enforces bounded upload bytes, upload rows and columns, query rows and columns, cell size, schema metadata entries, insight payload rows, and request SQL length. Query and LLM execution routes are rate-limited. A Redis-backed limiter is used when `REDIS_URL` is configured; without Redis, the bounded in-memory limiter is suitable only for a single-process local deployment.
+## Features
 
-Refresh tokens are stored as SHA-256 hashes and consumed atomically during rotation. Existing plaintext refresh-token rows are invalidated by the migration that introduces the hashed column. Access tokens include issuer and audience claims and use the fixed HS256 algorithm configured by the application.
+- **Ask** — Natural-language questions turned into SQL, with results, charts, and a trust panel
+- **SQL** — Manual SQL editor with formatting and execution
+- **Schema** — Browse synced tables and columns for the active connection
+- **Metrics** — Define reusable business metrics and preview them
+- **Govern** — Set connection policies (blocked tables/columns, confidence rules)
+- **Audit** — Query history, detail view, replay, and pipeline telemetry
+- **Connections** — Add PostgreSQL, MySQL, SQL Server, SQLite, or CSV/Excel uploads; sync schema; manage business-language aliases
+- **Auth** — Email/password login, token refresh, and optional Google sign-in
+- **Feedback** — Rate whether an answer helped, with optional reason chips and SQL correction
 
-## Technology stack
+Other UI helpers: saved queries and recent queries (stored in the browser), command palette, keyboard shortcuts, light/dark theme.
+
+---
+
+## Tech stack
 
 | Layer | Technologies |
-|---|---|
+|-------|--------------|
 | Backend | FastAPI, SQLAlchemy, Alembic, Pandas, SQLGlot, Python 3.10+ |
-| Frontend | Streamlit wrapper, vanilla HTML/CSS/JavaScript, Chart.js, CodeMirror |
-| AI | OpenAI-compatible provider and optional Gemini-compatible provider |
-| Metadata database | PostgreSQL in normal deployment; SQLite is supported for isolated local tests |
-| Target databases | PostgreSQL, MySQL, Microsoft SQL Server, SQLite, and application-owned uploads |
+| Frontend | React 19, TypeScript, Vite, Tailwind CSS, TanStack Query, Recharts |
+| AI | OpenAI-compatible and Gemini-compatible providers; heuristic NL→SQL compiler when no API key is set |
+| Platform database | PostgreSQL (via Docker Compose) or SQLite (simple local setup) |
+| Target databases | PostgreSQL, MySQL, Microsoft SQL Server, SQLite, CSV/Excel upload |
 
-## Repository structure
+---
 
-```text
-schemasay/
-├── backend/
-│   ├── app/
-│   │   ├── api/              # FastAPI route handlers
-│   │   ├── core/             # Authentication, connectors, SQL, AI, schema, charts
-│   │   ├── models/           # SQLAlchemy models
-│   │   ├── schemas/          # Pydantic request and response schemas
-│   │   └── utils/            # Shared utilities and rate limiting
-│   ├── alembic/              # Versioned metadata-database migrations
-│   ├── requirements.txt
-│   └── requirements-dev.txt
-├── frontend/
-│   ├── app.py                # Streamlit entry point and HTML bundler
-│   ├── index.html
-│   ├── js/                   # Frontend modules
-│   ├── css/
-│   └── requirements.txt
-├── .env.example
-├── docker-compose.yml
-└── pyproject.toml
-```
+## Screenshots
 
-## Local setup
+[TODO: Add screenshot — Ask workbench with results]
+
+[TODO: Add screenshot — Connections and schema aliases]
+
+[TODO: Add screenshot — Audit page with pipeline telemetry]
+
+---
+
+## Getting started
 
 ### Prerequisites
 
-Use Python 3.10 or later, Docker Compose for local PostgreSQL, and an optional OpenAI-compatible or Gemini-compatible API key for AI features. The application can run in heuristic/offline mode when no LLM provider is configured.
+- Python 3.10 or later
+- Node.js 22 or later (for the frontend)
+- Optional: Docker (for PostgreSQL as the platform database)
+- Optional: OpenAI or Gemini API key (for LLM-backed SQL and richer insights). Without a key, Ask uses the built-in heuristic compiler.
 
-### Configure the environment
-
-Copy the template and replace every placeholder with a generated value. `SECRET_KEY` must be at least 32 characters. `ENCRYPTION_KEY` must be a valid Fernet key.
+### 1. Clone and configure
 
 ```bash
+git clone <your-repo-url>
+cd SchemaSay
 cp .env.example .env
+cp frontend/.env.example frontend/.env
 ```
 
-For a hosted deployment, configure `ALLOWED_DB_HOSTS` explicitly. For local SQLite files, leave `ALLOWED_SQLITE_ROOTS` empty to use the application-owned data directory, or provide absolute approved directories. Configure `REDIS_URL` when running multiple workers or instances.
+Edit `.env` and set real values (placeholders are rejected on startup):
 
-### Start PostgreSQL
+| Variable | Purpose |
+|----------|---------|
+| `DATABASE_URL` | Platform database (see options below) |
+| `SECRET_KEY` | JWT signing key (32+ characters) |
+| `ENCRYPTION_KEY` | Fernet key for stored connection passwords |
+| `OPENAI_API_KEY` / `GEMINI_API_KEY` | Optional LLM providers |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Optional Google sign-in |
 
-The Compose service binds its port to localhost only and uses the `POSTGRES_*` variables from `.env`.
+Generate a Fernet key:
+
+```bash
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+
+**Platform database options**
+
+PostgreSQL (Docker):
 
 ```bash
 docker compose up -d
 ```
 
-### Install and run the backend
+Use the `DATABASE_URL` from `.env.example` (PostgreSQL on localhost).
+
+SQLite (no Docker):
+
+```env
+DATABASE_URL=sqlite:///./backend/schemasay_local.db
+```
+
+Use an absolute path on Windows if you prefer, for example:
+
+```env
+DATABASE_URL=sqlite:///C:/path/to/SchemaSay/backend/schemasay_local.db
+```
+
+### 2. Backend
 
 ```bash
 python -m venv .venv
-source .venv/bin/activate
+
+# Windows
+.venv\Scripts\activate
+
+# macOS / Linux
+# source .venv/bin/activate
+
 pip install -r backend/requirements.txt
 pip install -r backend/requirements-dev.txt
 alembic -c backend/alembic.ini upgrade head
-PYTHONPATH=backend uvicorn app.main:app --reload
 ```
 
-Schema changes are managed by Alembic. The application does not call `create_all()` during production startup. Check `/health` for liveness and `/ready` for metadata-database readiness.
-
-### Install and run the frontend
+Run the API:
 
 ```bash
-python -m venv frontend/.venv
-source frontend/.venv/bin/activate
-pip install -r frontend/requirements.txt
-SCHEMASAY_API_BASE_URL=http://localhost:8000/api/v1 \
-SCHEMASAY_DEMO_MODE=false \
-streamlit run frontend/app.py
+# Windows PowerShell
+$env:PYTHONPATH="backend"
+uvicorn app.main:app --reload
+
+# macOS / Linux
+# PYTHONPATH=backend uvicorn app.main:app --reload
 ```
 
-Demo mode is disabled by default. Set `SCHEMASAY_DEMO_MODE=true` only for an intentionally isolated demonstration; the UI should display demo data only in that mode.
+- API: `http://localhost:8000`
+- Swagger docs: `http://localhost:8000/docs`
+- Health: `GET /health`
+- Readiness: `GET /ready`
 
-## Testing and quality checks
-
-The backend test harness supplies an isolated SQLite metadata database and test-only connector roots, so the ordinary test command is self-contained:
+### 3. Frontend
 
 ```bash
-PYTHONPATH=backend pytest -q backend/tests
-python -m compileall -q backend/app backend/tests
-node --check frontend/js/*.js
-ruff check backend/app backend/tests
-bandit -r backend/app
-pip-audit -r backend/requirements.txt
+cd frontend
+npm install
+npm run dev
 ```
 
-CI should run these checks on every change, together with a PostgreSQL migration job and a browser smoke test using `SCHEMASAY_DEMO_MODE=false`.
+- App: `http://localhost:5173`
 
-## API health and limits
+In development, Vite proxies `/api` to the backend on port 8000.
 
-`GET /health` is a lightweight liveness endpoint. `GET /ready` verifies that the metadata database can execute a simple query. Production deployments should place the API behind TLS termination, configure trusted proxy behavior explicitly, enforce network egress restrictions, and use a read-only account on each target database.
+### 4. First use
 
-The default resource limits are intentionally conservative and can be adjusted through environment variables: uploads are capped at 10 MB, uploads at 100,000 rows and 100 columns, query results at 10,000 rows and 200 columns, cells at 32 KiB, schema metadata at 20,000 entries, and insight requests at 5,000 rows. Raising these limits should be accompanied by load testing and worker-level memory controls.
+1. Open `http://localhost:5173` and create an account (or sign in with Google if configured).
+2. Go to **Connections** and add a database or upload a CSV/Excel file.
+3. Sync schema from the connection or Schema page.
+4. Open **Ask**, pick a question, and review results, trust info, and audit history.
+
+---
+
+## How it works
+
+```text
+User → React UI → FastAPI
+                    → Query pipeline (NL→SQL or raw SQL)
+                    → SQL validation + schema grounding + policy checks
+                    → Execute on target database (bounded rows)
+                    → Results, chart, explanation, audit log
+```
+
+**NL→SQL path:** A heuristic compiler handles many questions offline. When LLM API keys are present, the system can route harder questions to OpenAI or Gemini and fall back to heuristics if needed.
+
+**Security:** Only single `SELECT` statements are allowed. Writes, stacked queries, and many dangerous patterns are blocked. Connection hosts can be restricted with allowlists. Target database accounts should still be read-only.
+
+---
+
+## Project structure
+
+```text
+SchemaSay/
+├── backend/
+│   ├── app/
+│   │   ├── api/routes/       # REST endpoints
+│   │   ├── core/
+│   │   │   ├── ai/           # Heuristic compiler, query generator, insights
+│   │   │   ├── pipeline/     # Query orchestration
+│   │   │   ├── security/     # SQL validation
+│   │   │   ├── schema/       # Schema graph and sync
+│   │   │   ├── eval/         # Heuristic benchmark harness
+│   │   │   └── ...
+│   │   ├── models/           # SQLAlchemy models
+│   │   └── schemas/          # Pydantic request/response types
+│   ├── alembic/              # Platform DB migrations
+│   ├── scripts/
+│   │   └── run_heuristic_eval.py
+│   └── tests/                # Backend test suite
+├── frontend/
+│   └── src/
+│       ├── features/         # Ask, SQL, Schema, Metrics, Govern, Audit, Connections, Auth
+│       ├── components/       # Shared UI
+│       └── lib/              # API client, utilities
+├── .env.example
+├── docker-compose.yml        # Optional PostgreSQL for platform DB
+└── .github/workflows/ci.yml
+```
+
+---
+
+## API overview
+
+All routes are under `/api/v1`. Main groups:
+
+| Group | Purpose |
+|-------|---------|
+| `/auth` | Register, login, refresh, logout, Google OAuth, current user |
+| `/connections` | CRUD, test, upload, aliases, policies, history |
+| `/schema` | Sync, list, tree view |
+| `/assistant` | Natural-language query, raw SQL execution |
+| `/query` | Direct SQL execute and format |
+| `/insights` | Summaries over result data |
+| `/metrics` | Metric definitions and preview |
+| `/audit` | List, detail, replay |
+| `/feedback` | Submit feedback, fetch learning examples |
+
+Full interactive docs: `http://localhost:8000/docs`
+
+---
+
+## Testing
+
+Backend (195 tests):
+
+```bash
+# Windows PowerShell
+$env:DATABASE_URL="sqlite:///:memory:"
+$env:SECRET_KEY="test-secret-key-0123456789-0123456789"
+$env:ENCRYPTION_KEY="7c2w6QFqE7d3hK2x5uXvGmYwQ8rTnZpL0sA1bC2dE3f="
+$env:PYTHONPATH="backend"
+python -m pytest -q backend/tests
+
+# macOS / Linux
+# DATABASE_URL=sqlite:///:memory: SECRET_KEY=test-secret-key-0123456789-0123456789 \
+# ENCRYPTION_KEY=7c2w6QFqE7d3hK2x5uXvGmYwQ8rTnZpL0sA1bC2dE3f= \
+# PYTHONPATH=backend pytest -q backend/tests
+```
+
+Frontend build check:
+
+```bash
+cd frontend
+npm run build
+```
+
+Heuristic eval benchmark (offline, no API key needed):
+
+```bash
+python backend/scripts/run_heuristic_eval.py
+```
+
+**Eval results:** [TODO: Add pass rate summary after running the benchmark on your machine]
+
+### CI
+
+GitHub Actions runs on push and pull request:
+
+- Backend: pytest, ruff, bandit, pip-audit, migration check (Python 3.10–3.12)
+- Frontend job: [TODO: Update CI to run `npm run build` — current workflow still targets removed legacy frontend files]
+
+---
+
+## Configuration and limits
+
+Default resource limits (override via environment variables in `backend/app/config.py`):
+
+| Limit | Default |
+|-------|---------|
+| Upload size | 10 MB |
+| Upload rows / columns | 100,000 / 100 |
+| Query result rows / columns | 10,000 / 200 |
+| Cell size | 32 KiB |
+| Schema metadata entries | 20,000 |
+
+Rate limiting uses Redis when `REDIS_URL` is set. Without Redis, an in-memory limiter is used (fine for single-process local runs).
+
+For production-style deployments, set `ALLOWED_DB_HOSTS` and use read-only credentials on target databases.
+
+---
+
+## Known limitations
+
+- Complex multi-table questions may need manual SQL or schema aliases.
+- Insights work best with an LLM API key; some simple cases use rule-based summaries.
+- Saved queries and recent queries live in browser storage only (not synced to the server).
+- No hosted deployment guide yet — see placeholder below.
+
+---
+
+## Roadmap
+
+| Status | Item |
+|--------|------|
+| Done | Ask, SQL, Schema, Metrics, Govern, Audit, Connections, auth, aliases, answer-focused feedback |
+| Done | Heuristic compiler, eval harness, audit telemetry |
+| TODO | Public demo deployment |
+| TODO | Updated frontend CI (`npm run build`) |
+| TODO | [Add your next priorities here] |
+
+---
+
+## Deployment
+
+[TODO: Add deployment steps when you host this (e.g. Railway, Render, VPS). Include notes on PostgreSQL, Redis, TLS, and `ALLOWED_DB_HOSTS`.]
+
+---
 
 ## License
 
-This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
+MIT License — see [LICENSE](LICENSE).
+
+---
+
+## Author
+
+[TODO: Your name]
+
+[TODO: LinkedIn or portfolio link]
+
+[TODO: GitHub profile link]
