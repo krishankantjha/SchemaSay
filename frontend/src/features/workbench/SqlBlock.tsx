@@ -8,9 +8,11 @@ import { cn } from "@/lib/utils";
 type SqlBlockProps = {
   sql: string;
   defaultCollapsed?: boolean;
+  /** When true, collapsed state shows only action buttons — no SQL preview line. */
+  disclosure?: boolean;
 };
 
-export function SqlBlock({ sql, defaultCollapsed = false }: SqlBlockProps) {
+export function SqlBlock({ sql, defaultCollapsed = false, disclosure = false }: SqlBlockProps) {
   const [copied, setCopied] = useState(false);
   const [collapsed, setCollapsed] = useState(defaultCollapsed);
   const lineCount = sql.split("\n").length;
@@ -22,7 +24,25 @@ export function SqlBlock({ sql, defaultCollapsed = false }: SqlBlockProps) {
   async function copy() {
     await navigator.clipboard.writeText(sql);
     setCopied(true);
-    window.setTimeout(() => setCopied(false), 2000);
+    window.setTimeout(() => setCopied(false),  2000);
+  }
+
+  if (disclosure && collapsed) {
+    return (
+      <div className="flex flex-wrap items-center gap-2">
+        <Button size="sm" variant="secondary" onClick={() => setCollapsed(false)}>
+          Show SQL
+        </Button>
+        <Link
+          to="/sql"
+          state={{ sql }}
+          className="inline-flex min-h-[36px] items-center gap-1 rounded-[var(--radius-md)] px-2 text-xs text-text-secondary no-underline hover:text-text-primary"
+        >
+          <SquareArrowOutUpRight className="h-3.5 w-3.5" aria-hidden />
+          Open in SQL editor
+        </Link>
+      </div>
+    );
   }
 
   return (
@@ -63,7 +83,7 @@ export function SqlBlock({ sql, defaultCollapsed = false }: SqlBlockProps) {
         <pre className={cn("sql-block max-h-56 overflow-auto rounded-none border-0 animate-reveal")}>
           <code dangerouslySetInnerHTML={{ __html: highlightSql(sql) }} />
         </pre>
-      ) : (
+      ) : disclosure ? null : (
         <p className="truncate px-3 py-2 font-mono text-[11px] text-text-muted">{sql.replace(/\s+/g, " ")}</p>
       )}
     </div>

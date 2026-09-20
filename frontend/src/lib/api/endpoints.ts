@@ -2,6 +2,7 @@ import { apiFormRequest, apiRequest } from "./client";
 import type {
   AuditLog,
   AuditReplayResponse,
+  AuditStats,
   Connection,
   ConnectionCreate,
   ConnectionTest,
@@ -10,6 +11,7 @@ import type {
   ConnectionPolicyUpdate,
   SchemaAlias,
   SchemaAliasCreate,
+  SchemaAliasSuggestion,
   SchemaAliasUpdate,
   FeedbackCreate,
   FeedbackResponse,
@@ -66,6 +68,9 @@ export const connectionsApi = {
     return apiFormRequest<Connection>("/connections/upload", form);
   },
 
+  createSample: () =>
+    apiRequest<Connection>("/connections/sample", { method: "POST" }),
+
   getPolicy: (connectionId: number) =>
     apiRequest<ConnectionPolicy>(`/connections/${connectionId}/policy`),
 
@@ -77,6 +82,9 @@ export const connectionsApi = {
 
   listAliases: (connectionId: number) =>
     apiRequest<SchemaAlias[]>(`/connections/${connectionId}/aliases`),
+
+  listAliasSuggestions: (connectionId: number) =>
+    apiRequest<SchemaAliasSuggestion[]>(`/connections/${connectionId}/aliases/suggestions`),
 
   createAlias: (connectionId: number, payload: SchemaAliasCreate) =>
     apiRequest<SchemaAlias>(`/connections/${connectionId}/aliases`, {
@@ -107,16 +115,18 @@ export const schemaApi = {
 };
 
 export const assistantApi = {
-  query: (connectionId: number, question: string) =>
+  query: (connectionId: number, question: string, signal?: AbortSignal) =>
     apiRequest<QueryResponse>("/assistant/query", {
       method: "POST",
       body: { connection_id: connectionId, question },
+      signal,
     }),
 
-  executeRaw: (connectionId: number, sql: string) =>
+  executeRaw: (connectionId: number, sql: string, signal?: AbortSignal) =>
     apiRequest<QueryResponse>("/assistant/execute-raw", {
       method: "POST",
       body: { connection_id: connectionId, sql_query: sql },
+      signal,
     }),
 };
 
@@ -162,6 +172,14 @@ export const metricsApi = {
 };
 
 export const auditApi = {
+  stats: (params?: { connection_id?: number; sample_limit?: number }) => {
+    const q = new URLSearchParams();
+    if (params?.connection_id) q.set("connection_id", String(params.connection_id));
+    if (params?.sample_limit) q.set("sample_limit", String(params.sample_limit));
+    const qs = q.toString();
+    return apiRequest<AuditStats>(`/audit/stats${qs ? `?${qs}` : ""}`);
+  },
+
   list: (params?: { page?: number; limit?: number; connection_id?: number; status?: string }) => {
     const q = new URLSearchParams();
     if (params?.page) q.set("page", String(params.page));

@@ -1,4 +1,5 @@
 import { memo, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -6,10 +7,13 @@ import {
   GitBranch,
   Loader2,
   Lock,
+  PencilLine,
   ShieldCheck,
   Table2,
+  Tags,
   XCircle,
 } from "lucide-react";
+import { Button } from "@/components/ui/Button";
 import type { QueryExplanation } from "@/lib/api/types";
 import { resolutionSourceLabel, routingDecisionLabel } from "@/lib/utils";
 import { Alert } from "@/components/ui/Alert";
@@ -75,7 +79,12 @@ export const QueryTrustPanel = memo(function QueryTrustPanel({
       </div>
 
       {explanation ? (
-        <ConfidenceCard explanation={explanation} />
+        <>
+          <ConfidenceCard explanation={explanation} />
+          {explanation.confidence < 41 ? (
+            <LowConfidenceActions sql={sql} />
+          ) : null}
+        </>
       ) : running ? (
         <div className="mt-3 rounded-[var(--radius-md)] border border-border-subtle bg-bg-elevated/40 px-3 py-3 text-center">
           <p className="text-sm font-medium text-text-primary">Verifying…</p>
@@ -189,6 +198,33 @@ export const QueryTrustPanel = memo(function QueryTrustPanel({
     </aside>
   );
 });
+
+function LowConfidenceActions({ sql }: { sql?: string | null }) {
+  return (
+    <div className="mt-3 rounded-[var(--radius-md)] border border-border-subtle bg-bg-elevated/50 px-3 py-3 animate-reveal">
+      <p className="text-xs font-medium text-text-primary">Improve the next answer</p>
+      <p className="mt-1 text-[11px] leading-relaxed text-text-muted">
+        Low confidence usually means schema vocabulary did not match your question.
+      </p>
+      <div className="mt-2 flex flex-wrap gap-2">
+        <Link to="/connections" className="no-underline">
+          <Button size="sm" variant="secondary">
+            <Tags className="h-3.5 w-3.5" />
+            Add alias
+          </Button>
+        </Link>
+        {sql?.trim() ? (
+          <Link to="/sql" state={{ sql }} className="no-underline">
+            <Button size="sm" variant="ghost">
+              <PencilLine className="h-3.5 w-3.5" />
+              Try SQL editor
+            </Button>
+          </Link>
+        ) : null}
+      </div>
+    </div>
+  );
+}
 
 function ConfidenceCard({ explanation }: { explanation: QueryExplanation }) {
   const label =

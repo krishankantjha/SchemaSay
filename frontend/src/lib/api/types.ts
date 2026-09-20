@@ -88,7 +88,16 @@ export type SchemaSyncResponse = {
   message: string;
   tables_synced: number;
   columns_synced: number;
-  tables_profiled?: number;
+  profiled_tables?: number;
+  suggested_aliases?: SchemaAliasSuggestion[];
+};
+
+export type SchemaAliasSuggestion = {
+  alias_type: SchemaAliasType;
+  alias_token: string;
+  target_table: string;
+  target_column?: string | null;
+  reason: string;
 };
 
 export type ChartConfig = {
@@ -222,6 +231,22 @@ export type AuditTelemetry = {
   execution_match: boolean | null;
   validation_issues: string[];
   component_confidence: Record<string, number> | null;
+};
+
+export type AuditStats = {
+  total_queries: number;
+  success_count: number;
+  failed_count: number;
+  avg_duration_ms: number;
+  heuristic_count: number;
+  llm_count: number;
+  metric_count: number;
+  learning_count: number;
+  other_count: number;
+  heuristic_percent: number;
+  llm_percent: number;
+  escalation_reasons: Record<string, number>;
+  sample_size: number;
 };
 
 export type AuditLog = {

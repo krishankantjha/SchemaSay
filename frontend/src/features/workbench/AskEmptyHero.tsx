@@ -5,32 +5,42 @@ import { auditApi } from "@/lib/api/endpoints";
 import { useConnection } from "@/features/connections/ConnectionContext";
 import { Button } from "@/components/ui/Button";
 import { Tooltip } from "@/components/ui/Tooltip";
+import type { SchemaTableNode } from "@/lib/api/types";
+import { buildStarterQuestions } from "@/lib/starter-questions";
 import { RecentQueries } from "@/features/workbench/RecentQueries";
 import { SavedQueries } from "@/features/workbench/SavedQueries";
 
-const EXAMPLE_QUESTIONS = [
-  "What was total revenue by quarter last year?",
-  "Who are the top 10 customers by order value?",
-  "Which orders declined month over month?",
-  "Are there duplicate email addresses in customers?",
-];
-
 type AskEmptyHeroProps = {
   tableCount?: number;
+  tables?: SchemaTableNode[];
   onTryExample: (question: string) => void;
   onSelectRecent: (question: string) => void;
 };
 
-export function AskEmptyHero({ tableCount, onTryExample, onSelectRecent }: AskEmptyHeroProps) {
+export function AskEmptyHero({
+  tableCount,
+  tables = [],
+  onTryExample,
+  onSelectRecent,
+}: AskEmptyHeroProps) {
+  const starterQuestions = buildStarterQuestions(tables);
   return (
     <div className="mb-3 animate-reveal">
       <h2 className="type-display text-lg">Ask anything about your data</h2>
       <p className="type-body mt-0.5 max-w-xl leading-normal">
         Ask in plain English — SchemaSay generates governed SQL, validates it, and returns results
-        with a trust score.
+        with a trust score. Works offline with the built-in heuristic engine; add an API key only
+        when you want help on harder questions.
         {tableCount != null && tableCount > 0
           ? ` ${tableCount} table${tableCount === 1 ? "" : "s"} in the sidebar.`
           : null}
+      </p>
+      <p className="mt-2 text-xs text-text-muted">
+        Tip: define a few{" "}
+        <Link to="/metrics" className="font-medium text-accent">
+          semantic metrics
+        </Link>{" "}
+        for instant KPI answers without full NL→SQL.
       </p>
 
       <div className="mt-3 grid gap-2 sm:grid-cols-3">
@@ -45,14 +55,14 @@ export function AskEmptyHero({ tableCount, onTryExample, onSelectRecent }: AskEm
         </Tip>
       </div>
 
+      <RecentQueries className="mt-3" onSelect={onSelectRecent} limit={6} />
       <SavedQueries className="mt-3" onSelect={onSelectRecent} />
-      <RecentQueries className="mt-3" onSelect={onSelectRecent} />
       <QueryHistoryStrip onSelect={onSelectRecent} />
 
-      <div className="mt-3">
+      <div className="mt-4">
         <p className="type-meta mb-1.5">Try asking</p>
         <div className="flex flex-wrap gap-2">
-          {EXAMPLE_QUESTIONS.map((ex) => (
+          {starterQuestions.map((ex) => (
             <Button
               key={ex}
               type="button"

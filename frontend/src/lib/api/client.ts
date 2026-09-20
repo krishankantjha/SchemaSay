@@ -49,10 +49,15 @@ type RequestOptions = {
   body?: unknown;
   auth?: boolean;
   retry?: boolean;
+  signal?: AbortSignal;
 };
 
+export function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === "AbortError";
+}
+
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { method = "GET", body, auth = true, retry = true } = options;
+  const { method = "GET", body, auth = true, retry = true, signal } = options;
 
   const headers: Record<string, string> = {
     Accept: "application/json",
@@ -70,6 +75,7 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
     method,
     headers,
     body: body !== undefined ? JSON.stringify(body) : undefined,
+    signal,
   });
 
   if (response.status === 401 && auth && retry && refreshHandler) {

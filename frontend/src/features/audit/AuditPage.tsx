@@ -64,6 +64,16 @@ function AuditPageContent() {
       }),
   });
 
+  const { data: routingStats } = useQuery({
+    queryKey: ["audit-stats", activeConnectionId],
+    queryFn: () =>
+      auditApi.stats({
+        connection_id: activeConnectionId ?? undefined,
+        sample_limit: 250,
+      }),
+    enabled: Boolean(activeConnectionId),
+  });
+
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim();
     if (!q) return logs;
@@ -126,11 +136,55 @@ function AuditPageContent() {
         }
       />
 
+      {routingStats && routingStats.sample_size > 0 ? (
+        <>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <StatCard
+              label="Heuristic path"
+              value={`${routingStats.heuristic_percent}%`}
+              hint={`${routingStats.heuristic_count} of ${routingStats.sample_size} recent queries`}
+              variant="success"
+            />
+            <StatCard
+              label="LLM path"
+              value={`${routingStats.llm_percent}%`}
+              hint={`${routingStats.llm_count} escalations`}
+              variant={routingStats.llm_percent > 20 ? "warning" : "default"}
+            />
+            <StatCard
+              label="Metric / learning"
+              value={routingStats.metric_count + routingStats.learning_count}
+              hint="Skipped NL→SQL via governed shortcuts"
+            />
+            <StatCard
+              label="Avg duration"
+              value={`${routingStats.avg_duration_ms}ms`}
+              icon={Clock}
+              hint={`Last ${routingStats.sample_size} queries`}
+            />
+          </div>
+          {Object.keys(routingStats.escalation_reasons).length > 0 ? (
+            <div className="rounded-lg border border-border-subtle bg-bg-surface px-4 py-3">
+              <p className="text-xs font-medium uppercase tracking-wide text-text-muted">
+                Escalation reasons
+              </p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {Object.entries(routingStats.escalation_reasons).map(([reason, count]) => (
+                  <Badge key={reason} variant="default">
+                    {reason.replace(/_/g, " ")} · {count}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </>
+      ) : null}
+
       {!isLoading && logs.length > 0 ? (
         <div className="grid gap-3 sm:grid-cols-3">
           <StatCard label="Success (page)" value={summary.success} variant="success" />
           <StatCard label="Failed (page)" value={summary.failed} variant={summary.failed > 0 ? "danger" : "default"} />
-          <StatCard label="Avg duration" value={`${summary.avgMs}ms`} icon={Clock} />
+          <StatCard label="Avg duration (page)" value={`${summary.avgMs}ms`} icon={Clock} />
         </div>
       ) : null}
 

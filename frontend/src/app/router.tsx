@@ -5,6 +5,8 @@ import { RouteFallback } from "@/components/ui/RouteFallback";
 import { LoginPage } from "@/features/auth/LoginPage";
 import { RegisterPage } from "@/features/auth/RegisterPage";
 import { OAuthCallbackPage } from "@/features/auth/OAuthCallbackPage";
+import { PrivacyPage } from "@/features/legal/PrivacyPage";
+import { TermsPage } from "@/features/legal/TermsPage";
 import { ProtectedRoute, PublicOnlyRoute } from "@/features/auth/ProtectedRoute";
 
 const AskPage = lazy(() =>
@@ -39,6 +41,8 @@ export function AppRouter() {
     <BrowserRouter>
       <Routes>
         <Route path="/auth/callback" element={<OAuthCallbackPage />} />
+        <Route path="/terms" element={<TermsPage />} />
+        <Route path="/privacy" element={<PrivacyPage />} />
 
         <Route element={<PublicOnlyRoute />}>
           <Route path="/login" element={<LoginPage />} />

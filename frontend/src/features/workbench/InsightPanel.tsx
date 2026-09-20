@@ -14,6 +14,11 @@ type InsightPanelProps = {
   rows?: Record<string, unknown>[];
   onRetry?: () => void;
   onHighlightColumn?: (column: string) => void;
+  /** When true, show a button to generate summary instead of loading automatically. */
+  optIn?: boolean;
+  requested?: boolean;
+  onRequest?: () => void;
+  canRequest?: boolean;
 };
 
 export const InsightPanel = memo(function InsightPanel({
@@ -23,9 +28,35 @@ export const InsightPanel = memo(function InsightPanel({
   rows = [],
   onRetry,
   onHighlightColumn,
+  optIn = false,
+  requested = false,
+  onRequest,
+  canRequest = true,
 }: InsightPanelProps) {
   const columns = rows.length ? Object.keys(rows[0]) : [];
   const stats = useMemo(() => deriveResultStats(rows), [rows]);
+
+  if (optIn && !requested && !insight?.insight && !isLoading && !error) {
+    if (!canRequest) return null;
+    return (
+      <div className="rounded-[var(--radius-md)] border border-border-subtle bg-bg-elevated/40 px-4 py-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-2">
+            <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-brand" strokeWidth={2} aria-hidden />
+            <div>
+              <p className="text-sm font-medium text-text-primary">Plain-English summary</p>
+              <p className="mt-0.5 text-xs text-text-muted">
+                Optional — generates a short answer from your result table (uses AI when configured).
+              </p>
+            </div>
+          </div>
+          <Button size="sm" variant="secondary" onClick={onRequest}>
+            Generate summary
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   if (isLoading) {
     return (

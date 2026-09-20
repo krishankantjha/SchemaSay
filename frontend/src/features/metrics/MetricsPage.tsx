@@ -3,8 +3,9 @@ import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Eye, LineChart, Plus, Trash2, Layers } from "lucide-react";
 import { ApiError } from "@/lib/api/client";
-import { metricsApi } from "@/lib/api/endpoints";
+import { metricsApi, schemaApi } from "@/lib/api/endpoints";
 import type { Metric, MetricCreate } from "@/lib/api/types";
+import { buildMetricStarters, type MetricStarter } from "@/lib/metric-starters";
 import { useConnection } from "@/features/connections/ConnectionContext";
 import { ConnectionRequired } from "@/components/shared/ConnectionRequired";
 import { SqlBlock } from "@/features/workbench/SqlBlock";
@@ -42,6 +43,7 @@ function MetricsPageContent() {
   const [previewQuestion, setPreviewQuestion] = useState("");
   const [previewResult, setPreviewResult] = useState<Awaited<ReturnType<typeof metricsApi.preview>> | null>(null);
   const [error, setError] = useState("");
+  const [starterDraft, setStarterDraft] = useState<MetricStarter | null>(null);
 
   const {
     data: metrics = [],
@@ -54,6 +56,17 @@ function MetricsPageContent() {
     queryFn: () => metricsApi.list(activeConnectionId!),
     enabled: Boolean(activeConnectionId),
   });
+
+  const { data: schemaTree } = useQuery({
+    queryKey: ["schema-tree", activeConnectionId],
+    queryFn: () => schemaApi.tree(activeConnectionId!),
+    enabled: Boolean(activeConnectionId),
+  });
+
+  const metricStarters = useMemo(
+    () => buildMetricStarters(schemaTree?.tables ?? []),
+    [schemaTree],
+  );
 
   const grouped = useMemo(() => {
     const map = new Map<string, Metric[]>();
@@ -113,11 +126,50 @@ function MetricsPageContent() {
         </div>
       ) : null}
 
+      {!isLoading && metrics.length < 5 && metricStarters.length > 0 ? (
+        <Card variant="elevated" className="border-accent/20 bg-accent-muted/10">
+          <CardHeader>
+            <CardTitle>Quick-start KPIs</CardTitle>
+            <CardDescription>
+              Define {Math.max(0, 3 - metrics.length)}–5 governed metrics so common questions skip
+              NL→SQL entirely. Pick a template from your synced schema.
+            </CardDescription>
+          </CardHeader>
+          <div className="grid gap-3 px-4 pb-4 md:grid-cols-2">
+            {metricStarters.map((starter) => (
+              <div
+                key={starter.name}
+                className="rounded-lg border border-border-subtle bg-bg-surface px-3 py-3"
+              >
+                <p className="text-sm font-medium text-text-primary">{starter.label}</p>
+                <p className="mt-1 text-xs text-text-muted">{starter.hint}</p>
+                <code className="mt-2 block rounded bg-bg-elevated px-2 py-1 font-mono text-[10px] text-text-secondary">
+                  {starter.sql_expression}
+                </code>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  className="mt-3"
+                  onClick={() => {
+                    setStarterDraft(starter);
+                    setShowForm(true);
+                  }}
+                >
+                  Use template
+                </Button>
+              </div>
+            ))}
+          </div>
+        </Card>
+      ) : null}
+
       {showForm ? (
         <MetricForm
           connectionId={activeConnectionId!}
+          initialStarter={starterDraft}
           onDone={() => {
             setShowForm(false);
+            setStarterDraft(null);
             void queryClient.invalidateQueries({ queryKey: ["metrics", activeConnectionId] });
             toast("Metric created", "success");
           }}
@@ -319,23 +371,38 @@ function MetricCard({
 
 function MetricForm({
   connectionId,
+  initialStarter,
   onDone,
   onError,
 }: {
   connectionId: number;
+  initialStarter?: MetricStarter | null;
   onDone: () => void;
   onError: (msg: string) => void;
 }) {
-  const [form, setForm] = useState<MetricCreate>({
-    connection_id: connectionId,
-    name: "",
-    label: "",
-    description: "",
-    sql_expression: "SUM(amount)",
-    base_table: "",
-    default_filters: "",
-    dimensions: [],
-  });
+  const [form, setForm] = useState<MetricCreate>(() =>
+    initialStarter
+      ? {
+          connection_id: connectionId,
+          name: initialStarter.name,
+          label: initialStarter.label,
+          description: initialStarter.description ?? "",
+          sql_expression: initialStarter.sql_expression,
+          base_table: initialStarter.base_table,
+          default_filters: initialStarter.default_filters ?? "",
+          dimensions: initialStarter.dimensions,
+        }
+      : {
+          connection_id: connectionId,
+          name: "",
+          label: "",
+          description: "",
+          sql_expression: "SUM(amount)",
+          base_table: "",
+          default_filters: "",
+          dimensions: [],
+        },
+  );
   const [dimName, setDimName] = useState("");
   const [dimLabel, setDimLabel] = useState("");
   const [dimCol, setDimCol] = useState("");

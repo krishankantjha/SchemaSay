@@ -31,21 +31,23 @@ export type FeedbackCategoryId = (typeof FEEDBACK_CATEGORIES)[number]["id"];
 export function refineSuggestion(
   question: string,
   categories: FeedbackCategoryId[],
+  comment?: string,
 ): string {
   const base = question.trim();
-  if (!base) return "";
+  const note = comment?.trim();
+  if (!base) return note ?? "";
 
   if (categories.includes("incomplete")) {
-    return `${base} — include more detail and breakdown`;
+    return note ? `${base} — ${note}` : `${base} — include more detail and breakdown`;
   }
   if (categories.includes("not_what_i_meant")) {
-    return `Clarify: ${base}`;
+    return note ? `${base} (I meant: ${note})` : `Clarify: ${base}`;
   }
   if (categories.includes("need_change")) {
-    return `${base} — with a different filter or grouping`;
+    return note ? `${base} — ${note}` : `${base} — with a different filter or grouping`;
   }
   if (categories.includes("empty_or_too_much")) {
-    return `Broaden or narrow: ${base}`;
+    return note ? `${base} — ${note}` : `Broaden or narrow: ${base}`;
   }
-  return `Refine: ${base}`;
+  return note ? `${base} — ${note}` : `Refine: ${base}`;
 }

@@ -13,7 +13,12 @@ export function AppShell() {
   const isWorkbench = WORKBENCH_PATHS.includes(location.pathname);
 
   return (
-    <div className="flex min-h-screen flex-col bg-bg-base">
+    <div
+      className={cn(
+        "flex flex-col bg-bg-base",
+        isWorkbench ? "h-dvh max-h-dvh overflow-hidden" : "min-h-screen",
+      )}
+    >
       <SkipLink />
       <GlobalShortcuts />
       <TopNav />
@@ -23,7 +28,7 @@ export function AppShell() {
         className={cn(
           "mx-auto flex w-full max-w-[1600px] flex-1 flex-col",
           isWorkbench
-            ? "min-h-0 px-0 py-[var(--space-layout-y)]"
+            ? "min-h-0 overflow-hidden px-0 py-[var(--space-layout-y)]"
             : "px-[var(--space-layout-x)] py-[var(--space-page)]",
         )}
       >
