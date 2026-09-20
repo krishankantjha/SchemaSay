@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Database, ShieldCheck } from "lucide-react";
 import {
   SchemaMobileDrawer,
@@ -37,19 +37,45 @@ type TrustProps = {
   running?: boolean;
 };
 
+export type TrustPanelControls = {
+  open: () => void;
+};
+
 type WorkbenchLayoutProps = {
   children: ReactNode;
   schema: SchemaProps;
   trust: TrustProps;
+  defaultSchemaCollapsed?: boolean;
+  defaultTrustCollapsed?: boolean;
+  onTrustControlsReady?: (controls: TrustPanelControls) => void;
 };
 
-export function WorkbenchLayout({ children, schema, trust }: WorkbenchLayoutProps) {
+export function WorkbenchLayout({
+  children,
+  schema,
+  trust,
+  defaultSchemaCollapsed = false,
+  defaultTrustCollapsed = false,
+  onTrustControlsReady,
+}: WorkbenchLayoutProps) {
   const isLg = useMediaQuery(MEDIA.lg);
   const isXl = useMediaQuery(MEDIA.xl);
   const [schemaDrawerOpen, setSchemaDrawerOpen] = useState(false);
   const [trustDrawerOpen, setTrustDrawerOpen] = useState(false);
-  const [schemaCollapsed, setSchemaCollapsed] = useState(false);
-  const [trustCollapsed, setTrustCollapsed] = useState(false);
+  const [schemaCollapsed, setSchemaCollapsed] = useState(defaultSchemaCollapsed);
+  const [trustCollapsed, setTrustCollapsed] = useState(defaultTrustCollapsed);
+
+  useEffect(() => {
+    onTrustControlsReady?.({
+      open: () => {
+        if (isXl) {
+          setTrustCollapsed(false);
+        } else {
+          setTrustDrawerOpen(true);
+        }
+      },
+    });
+  }, [isXl, onTrustControlsReady]);
 
   const showSchemaSidebar = isLg && !schemaCollapsed;
   const showTrustSidebar = isXl && !trustCollapsed;
@@ -72,7 +98,7 @@ export function WorkbenchLayout({ children, schema, trust }: WorkbenchLayoutProp
       <div className="relative flex min-h-0 flex-1 overflow-hidden">
         {showSchemaSidebar ? (
           <div
-            className="workbench-panel-side hidden w-[var(--workbench-side-width)] shrink-0 border-r lg:block xl:w-[var(--workbench-side-width-lg)]"
+            className="workbench-panel-side hidden min-h-0 w-[var(--workbench-side-width)] shrink-0 overflow-hidden border-r lg:flex lg:flex-col xl:w-[var(--workbench-side-width-lg)]"
           >
             <SchemaTreeSidebar
               {...schema}
@@ -89,7 +115,7 @@ export function WorkbenchLayout({ children, schema, trust }: WorkbenchLayoutProp
           </div>
         ) : null}
 
-        <div className="workbench-panel-center relative flex min-w-0 flex-1 flex-col overflow-hidden">
+        <div className="workbench-panel-center relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           {isLg && schemaCollapsed ? (
             <button
               type="button"
@@ -118,7 +144,7 @@ export function WorkbenchLayout({ children, schema, trust }: WorkbenchLayoutProp
         </div>
 
         {showTrustSidebar ? (
-          <div className="workbench-panel-side w-[var(--workbench-trust-width)] shrink-0 border-l">
+          <div className="workbench-panel-side flex min-h-0 w-[var(--workbench-trust-width)] shrink-0 flex-col overflow-hidden border-l">
             <QueryTrustPanel {...trust} onCollapse={() => setTrustCollapsed(true)} />
           </div>
         ) : null}

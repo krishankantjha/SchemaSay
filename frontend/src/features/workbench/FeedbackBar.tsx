@@ -26,6 +26,10 @@ type FeedbackBarProps = {
   columns: string[];
   onRefineQuestion?: (nextQuestion: string) => void;
   disabled?: boolean;
+  /** Hide technical interpretation — show feedback prompt only. */
+  simpleView?: boolean;
+  /** No card chrome — for Ask answer view. */
+  inline?: boolean;
 };
 
 type SubmitRating = "thumbs_up" | "thumbs_down" | "corrected";
@@ -40,6 +44,8 @@ export function FeedbackBar({
   columns,
   onRefineQuestion,
   disabled,
+  simpleView = false,
+  inline = false,
 }: FeedbackBarProps) {
   const [phase, setPhase] = useState<"ask" | "negative_form" | "submitted">("ask");
   const [rating, setRating] = useState<SubmitRating | null>(null);
@@ -58,14 +64,18 @@ export function FeedbackBar({
       setRating(vars.rating);
       setPhase("submitted");
       if (vars.rating === "thumbs_up") {
-        setMessage("Glad that helped.");
+        setMessage("Glad that helped — we'll reuse this answer pattern for similar questions.");
       } else if (vars.rating === "corrected") {
         setMessage("Thanks — your SQL suggestion was saved.");
         setShowAdvancedSql(false);
       } else {
         setMessage("Thanks — we'll use this to improve answers.");
         setRefineHint(
-          refineSuggestion(question, (vars.feedback_categories ?? []) as FeedbackCategoryId[]),
+          refineSuggestion(
+            question,
+            (vars.feedback_categories ?? []) as FeedbackCategoryId[],
+            vars.comment,
+          ),
         );
       }
     },
@@ -139,17 +149,26 @@ export function FeedbackBar({
     selectedCategories.includes("not_what_i_meant");
 
   return (
-    <div className="space-y-3 rounded-lg border border-border-subtle bg-bg-surface p-4">
-      <div className="rounded-md border border-accent/20 bg-accent-muted/20 px-3 py-2.5">
-        <p className="text-[10px] font-medium uppercase tracking-wide text-text-muted">
-          How we interpreted your question
-        </p>
-        <p className="mt-1 text-sm leading-relaxed text-text-secondary">{interpretation}</p>
-      </div>
+    <div
+      className={cn(
+        "space-y-3",
+        inline ? "border-t border-border-subtle pt-4" : "rounded-lg border border-border-subtle bg-bg-surface p-4",
+      )}
+    >
+      {!simpleView ? (
+        <div className="rounded-md border border-accent/20 bg-accent-muted/20 px-3 py-2.5">
+          <p className="text-[10px] font-medium uppercase tracking-wide text-text-muted">
+            How we interpreted your question
+          </p>
+          <p className="mt-1 text-sm leading-relaxed text-text-secondary">{interpretation}</p>
+        </div>
+      ) : null}
 
       {phase === "ask" ? (
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-sm font-medium text-text-primary">Did this answer your question?</span>
+          <span className="text-sm font-medium text-text-primary">
+            {simpleView ? "Was this helpful?" : "Did this answer your question?"}
+          </span>
           <Tooltip content="I have what I need">
             <Button
               variant="ghost"
@@ -215,6 +234,17 @@ export function FeedbackBar({
             />
           </div>
 
+          {selectedCategories.length || comment.trim() ? (
+            <div className="rounded-md border border-border-subtle bg-bg-elevated/40 px-3 py-2">
+              <p className="text-[10px] font-medium uppercase tracking-wide text-text-muted">
+                Suggested rephrase
+              </p>
+              <p className="mt-1 text-xs text-text-secondary">
+                {refineSuggestion(question, selectedCategories, comment)}
+              </p>
+            </div>
+          ) : null}
+
           <div className="flex flex-wrap gap-2">
             <Button size="sm" onClick={handleNegativeSubmit} loading={mutation.isPending}>
               Send feedback
@@ -276,7 +306,7 @@ export function FeedbackBar({
 
           {rating === "thumbs_down" && refineHint && onRefineQuestion ? (
             <div className="rounded-md border border-border-subtle bg-bg-elevated/50 p-3">
-              <p className="text-xs font-medium text-text-primary">Try refining your question</p>
+              <p className="text-xs font-medium text-text-primary">Try a rephrased question</p>
               <p className="mt-1 text-xs text-text-secondary">{refineHint}</p>
               <Button
                 size="sm"
@@ -285,7 +315,7 @@ export function FeedbackBar({
                 onClick={() => onRefineQuestion(refineHint)}
               >
                 <MessageSquare className="h-3.5 w-3.5" />
-                Use suggested wording
+                Try rephrase
               </Button>
             </div>
           ) : null}

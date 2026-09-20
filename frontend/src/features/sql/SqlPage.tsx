@@ -1,4 +1,4 @@
-import { useEffect, useState, type DragEvent, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type DragEvent, type KeyboardEvent } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Database, MessageSquare, Play, Wand2 } from "lucide-react";
@@ -6,7 +6,7 @@ import { addRecentAction } from "@/lib/recent-actions";
 import { RecentQueries } from "@/features/workbench/RecentQueries";
 import { SavedQueries } from "@/features/workbench/SavedQueries";
 import { WorkbenchLayout } from "@/components/workbench/WorkbenchLayout";
-import { ApiError } from "@/lib/api/client";
+import { ApiError, isAbortError } from "@/lib/api/client";
 import { assistantApi, queryApi, schemaApi } from "@/lib/api/endpoints";
 import type { QueryResponse } from "@/lib/api/types";
 import { useConnection } from "@/features/connections/ConnectionContext";
@@ -43,6 +43,8 @@ function SqlPageContent() {
   const [error, setError] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  const [insightRequested, setInsightRequested] = useState(false);
+  const runAbortRef = useRef<AbortController | null>(null);
   const insightMutation = useInsightGeneration();
 
   useEffect(() => {
@@ -57,10 +59,17 @@ function SqlPageContent() {
   });
 
   const runMutation = useMutation({
-    mutationFn: () => assistantApi.executeRaw(activeConnectionId!, sql),
+    mutationFn: () => {
+      runAbortRef.current?.abort();
+      const controller = new AbortController();
+      runAbortRef.current = controller;
+      return assistantApi.executeRaw(activeConnectionId!, sql, controller.signal);
+    },
     onSuccess: (data) => {
+      runAbortRef.current = null;
       setResult(data);
       setError(data.success ? null : data.error ?? "Execution failed");
+      setInsightRequested(false);
       insightMutation.reset();
       if (data.success) {
         const label = sql.trim().split("\n")[0] ?? "SQL query";
@@ -74,17 +83,20 @@ function SqlPageContent() {
       } else {
         toast("Query failed", "error");
       }
-      if (data.success && data.results?.length && data.sql) {
-        insightMutation.mutate({
-          question: "Summarize the business meaning of this SQL query result",
-          sql: data.sql,
-          rows: data.results,
-        });
-      }
     },
     onError: (err) => {
+      runAbortRef.current = null;
+      if (isAbortError(err)) {
+        setResult(null);
+        setError(null);
+        setInsightRequested(false);
+        insightMutation.reset();
+        toast("Query cancelled", "info");
+        return;
+      }
       setResult(null);
       insightMutation.reset();
+      setInsightRequested(false);
       setError(err instanceof ApiError ? err.detail : "Request failed");
       toast("Query failed", "error");
     },
@@ -111,8 +123,25 @@ function SqlPageContent() {
     }
   }
 
+  function cancelRun() {
+    runAbortRef.current?.abort();
+    runAbortRef.current = null;
+    runMutation.reset();
+  }
+
+  function requestInsight() {
+    if (!result?.sql || !result.results?.length) return;
+    setInsightRequested(true);
+    insightMutation.mutate({
+      question: "Summarize the business meaning of this SQL query result",
+      sql: result.sql,
+      rows: result.results,
+    });
+  }
+
   function handleRun() {
     setError(null);
+    setInsightRequested(false);
     insightMutation.reset();
     runMutation.mutate();
   }
@@ -165,7 +194,7 @@ function SqlPageContent() {
         running: runMutation.isPending,
       }}
     >
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain px-4 py-4 sm:px-6 touch-pan-y">
+      <div className="flex h-0 min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain px-4 py-4 sm:px-6 touch-pan-y">
           <PageHeader
             compact
             title="SQL Editor"
@@ -234,12 +263,13 @@ function SqlPageContent() {
           <div className="mt-4 space-y-4">
             {showEmpty ? (
               <>
-                <SavedQueries
+                <RecentQueries
                   filter="sql"
                   className="mb-4"
+                  limit={6}
                   onSelect={(q) => setSql(q)}
                 />
-                <RecentQueries
+                <SavedQueries
                   filter="sql"
                   className="mb-4"
                   onSelect={(q) => setSql(q)}
@@ -270,22 +300,31 @@ function SqlPageContent() {
                 progress="sql"
                 error={error}
                 onRetry={handleRun}
+                onCancel={runMutation.isPending ? cancelRun : undefined}
                 onDismissError={() => {
+                  cancelRun();
                   setError(null);
                   setResult(null);
+                  setInsightRequested(false);
+                  insightMutation.reset();
                 }}
                 result={result}
                 insight={insightMutation.data ?? null}
                 insightLoading={insightMutation.isPending}
                 insightError={insightError}
+                insightOptIn
+                insightRequested={insightRequested}
+                onRequestInsight={requestInsight}
                 onRetryInsight={
                   result?.sql && result.results?.length
-                    ? () =>
+                    ? () => {
+                        setInsightRequested(true);
                         insightMutation.mutate({
                           question: "Summarize the business meaning of this SQL query result",
                           sql: result.sql,
                           rows: result.results ?? [],
-                        })
+                        });
+                      }
                     : undefined
                 }
                 hideSql={Boolean(result?.sql && result.sql === sql)}

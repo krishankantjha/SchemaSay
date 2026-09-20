@@ -13,6 +13,9 @@ type DataTableProps = {
   maxHeight?: string;
   caption?: string;
   highlightColumn?: string | null;
+  columnLabels?: Record<string, string>;
+  /** Hide toolbar and filters — for compact Ask results. */
+  minimal?: boolean;
 };
 
 type SortDir = "asc" | "desc";
@@ -23,6 +26,8 @@ export const DataTable = memo(function DataTable({
   maxHeight = "420px",
   caption = "Query results",
   highlightColumn = null,
+  columnLabels,
+  minimal = false,
 }: DataTableProps) {
   const { push: toast } = useToast();
   const [page, setPage] = useState(0);
@@ -33,6 +38,10 @@ export const DataTable = memo(function DataTable({
 
   const columns = useMemo(() => (rows.length ? Object.keys(rows[0]) : []), [rows]);
   const numericCols = useMemo(() => detectNumericColumns(rows, columns), [rows, columns]);
+
+  function labelFor(col: string): string {
+    return columnLabels?.[col] ?? col;
+  }
 
   useEffect(() => {
     setPage(0);
@@ -126,68 +135,76 @@ export const DataTable = memo(function DataTable({
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="text-xs text-text-muted" aria-live="polite">
-          {isFiltered
-            ? `${sortedRows.length.toLocaleString()} of ${rows.length.toLocaleString()} rows`
-            : `${rows.length.toLocaleString()} row${rows.length === 1 ? "" : "s"}`}
-          {sortedRows.length
-            ? ` · showing ${from.toLocaleString()}–${to.toLocaleString()}`
-            : ""}
-          {sortCol ? ` · sorted by ${sortCol}` : ""}
-        </span>
-        <div className="flex flex-wrap gap-1">
-          <Button variant="ghost" size="sm" onClick={copyCsv} aria-label="Copy rows as CSV">
-            <Copy className="h-3.5 w-3.5" aria-hidden />
-            Copy
-          </Button>
-          <Button variant="ghost" size="sm" onClick={downloadCsv} aria-label="Download rows as CSV">
-            <Download className="h-3.5 w-3.5" aria-hidden />
-            CSV
-          </Button>
-          <Button variant="ghost" size="sm" onClick={downloadJson} aria-label="Download rows as JSON">
-            <Download className="h-3.5 w-3.5" aria-hidden />
-            JSON
-          </Button>
-        </div>
-      </div>
+      {!minimal ? (
+        <>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="text-xs text-text-muted" aria-live="polite">
+              {isFiltered
+                ? `${sortedRows.length.toLocaleString()} of ${rows.length.toLocaleString()} rows`
+                : `${rows.length.toLocaleString()} row${rows.length === 1 ? "" : "s"}`}
+              {sortedRows.length
+                ? ` · showing ${from.toLocaleString()}–${to.toLocaleString()}`
+                : ""}
+              {sortCol ? ` · sorted by ${labelFor(sortCol)}` : ""}
+            </span>
+            <div className="flex flex-wrap gap-1">
+              <Button variant="ghost" size="sm" onClick={copyCsv} aria-label="Copy rows as CSV">
+                <Copy className="h-3.5 w-3.5" aria-hidden />
+                Copy
+              </Button>
+              <Button variant="ghost" size="sm" onClick={downloadCsv} aria-label="Download rows as CSV">
+                <Download className="h-3.5 w-3.5" aria-hidden />
+                CSV
+              </Button>
+              <Button variant="ghost" size="sm" onClick={downloadJson} aria-label="Download rows as JSON">
+                <Download className="h-3.5 w-3.5" aria-hidden />
+                JSON
+              </Button>
+            </div>
+          </div>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <label className="relative min-w-[12rem] flex-1">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-text-muted" aria-hidden />
-          <input
-            type="search"
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            placeholder="Filter rows…"
-            aria-label="Filter results"
-            className="control-base h-[var(--control-height-sm)] w-full pl-8 pr-8 text-xs placeholder:text-text-muted"
-          />
-          {filter ? (
-            <button
-              type="button"
-              onClick={() => setFilter("")}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-primary"
-              aria-label="Clear filter"
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="relative min-w-[12rem] flex-1">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-text-muted" aria-hidden />
+              <input
+                type="search"
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+                placeholder="Filter rows…"
+                aria-label="Filter results"
+                className="control-base h-[var(--control-height-sm)] w-full pl-8 pr-8 text-xs placeholder:text-text-muted"
+              />
+              {filter ? (
+                <button
+                  type="button"
+                  onClick={() => setFilter("")}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-primary"
+                  aria-label="Clear filter"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              ) : null}
+            </label>
+            <select
+              value={filterCol}
+              onChange={(e) => setFilterCol(e.target.value)}
+              aria-label="Filter column"
+              className="control-base h-[var(--control-height-sm)] w-auto min-w-[8rem] px-2 text-xs"
             >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          ) : null}
-        </label>
-        <select
-          value={filterCol}
-          onChange={(e) => setFilterCol(e.target.value)}
-          aria-label="Filter column"
-          className="control-base h-[var(--control-height-sm)] w-auto min-w-[8rem] px-2 text-xs"
-        >
-          <option value="all">All columns</option>
-          {columns.map((col) => (
-            <option key={col} value={col}>
-              {col}
-            </option>
-          ))}
-        </select>
-      </div>
+              <option value="all">All columns</option>
+              {columns.map((col) => (
+                <option key={col} value={col}>
+                  {labelFor(col)}
+                </option>
+              ))}
+            </select>
+          </div>
+        </>
+      ) : rows.length > 1 ? (
+        <p className="text-xs text-text-muted">
+          {rows.length.toLocaleString()} row{rows.length === 1 ? "" : "s"}
+        </p>
+      ) : null}
 
       {rows.length >= LARGE_DATASET_NOTE ? (
         <p className="text-[11px] text-text-muted" role="note">
@@ -222,14 +239,14 @@ export const DataTable = memo(function DataTable({
                       <button
                         type="button"
                         onClick={() => toggleSort(col)}
-                        aria-label={`Sort by ${col}`}
+                        aria-label={`Sort by ${labelFor(col)}`}
                         aria-sort={sortAria(col)}
                         className={cn(
                           "group inline-flex min-h-[44px] items-center gap-1 transition-colors hover:text-text-primary",
                           sortCol === col && "text-accent",
                         )}
                       >
-                        {col}
+                        {labelFor(col)}
                         {sortCol === col ? (
                           sortDir === "asc" ? (
                             <ArrowUp className="h-3 w-3" aria-hidden />

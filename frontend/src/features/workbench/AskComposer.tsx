@@ -1,5 +1,5 @@
 import { useState, type DragEvent, type FormEvent, type KeyboardEvent } from "react";
-import { GripVertical, Send } from "lucide-react";
+import { GripVertical, Send, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Kbd } from "@/components/ui/Kbd";
 import { cn } from "@/lib/utils";
@@ -10,9 +10,12 @@ type AskComposerProps = {
   onSubmit: () => void;
   loading?: boolean;
   disabled?: boolean;
+  onCancel?: () => void;
   expanded?: boolean;
   compact?: boolean;
   placeholder?: string;
+  /** Previous question shown above the input in follow-up mode. */
+  contextQuestion?: string;
   className?: string;
 };
 
@@ -22,9 +25,11 @@ export function AskComposer({
   onSubmit,
   loading = false,
   disabled = false,
+  onCancel,
   expanded = false,
   compact = false,
   placeholder,
+  contextQuestion,
   className,
 }: AskComposerProps) {
   const [dragOver, setDragOver] = useState(false);
@@ -67,6 +72,11 @@ export function AskComposer({
 
   return (
     <form onSubmit={handleSubmit} className={cn("shrink-0", className)}>
+      {contextQuestion ? (
+        <p className="mb-2 line-clamp-2 text-xs text-text-muted">
+          <span className="font-medium text-text-secondary">Follow up on:</span> {contextQuestion}
+        </p>
+      ) : null}
       <div
         className={cn(
           "ask-composer group relative rounded-[var(--radius-lg)] border bg-bg-elevated/60",
@@ -127,17 +137,31 @@ export function AskComposer({
               <span className="text-text-muted/80">· refine this result</span>
             )}
           </p>
-          <Button
-            type="submit"
-            size="sm"
-            className="ml-auto"
-            disabled={!canSubmit}
-            loading={loading}
-            aria-label={loading ? "Asking…" : "Ask question"}
-          >
-            <Send className="icon-sm" strokeWidth={2} aria-hidden />
-            {loading ? "Asking…" : "Ask"}
-          </Button>
+          {loading && onCancel ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              className="ml-auto"
+              onClick={onCancel}
+              aria-label="Cancel question"
+            >
+              <X className="icon-sm" strokeWidth={2} aria-hidden />
+              Cancel
+            </Button>
+          ) : (
+            <Button
+              type="submit"
+              size="sm"
+              className="ml-auto"
+              disabled={!canSubmit}
+              loading={loading}
+              aria-label={loading ? "Asking…" : "Ask question"}
+            >
+              <Send className="icon-sm" strokeWidth={2} aria-hidden />
+              {loading ? "Asking…" : "Ask"}
+            </Button>
+          )}
         </div>
       </div>
     </form>
