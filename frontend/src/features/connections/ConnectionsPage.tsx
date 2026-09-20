@@ -40,6 +40,7 @@ import { PageListSkeleton } from "@/components/ui/Skeleton";
 import { PasswordInput } from "@/components/ui/PasswordInput";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { ConnectionAliasesSection } from "@/features/connections/ConnectionAliasesSection";
+import { autoSyncConnectionSchema } from "@/features/connections/autoSyncConnection";
 import { cn } from "@/lib/utils";
 
 type TestState =
@@ -207,13 +208,26 @@ export function ConnectionsPage() {
     }
   }
 
+  async function finalizeConnection(conn: Connection) {
+    setJustConnectedId(conn.id);
+    setActiveConnectionId(conn.id);
+    await refreshConnections();
+    setSyncingId(conn.id);
+    const syncResult = await autoSyncConnectionSchema(queryClient, conn.id);
+    setSyncingId(null);
+    if (syncResult.ok && syncResult.tableCount > 0) {
+      toast(`Connected — ${syncResult.tableCount} tables ready to query`, "success");
+    } else if (syncResult.ok) {
+      toast("Connected — sync schema if Ask does not see your tables", "info");
+    } else {
+      toast("Connected — run Sync if tables are missing on Ask", "info");
+    }
+  }
+
   const createConnection = useMutation({
     mutationFn: (payload: ConnectionCreate) => connectionsApi.create(payload),
     onSuccess: async (conn) => {
-      setJustConnectedId(conn.id);
-      setActiveConnectionId(conn.id);
-      await refreshConnections();
-      await queryClient.invalidateQueries({ queryKey: ["schema-tree", conn.id] });
+      await finalizeConnection(conn);
       setSqliteName("");
       setSqlitePath("");
       setServerName("");
@@ -224,10 +238,19 @@ export function ConnectionsPage() {
       setServerDatabase("");
       setSqliteTest({ status: "idle" });
       setServerTest({ status: "idle" });
-      toast("Connection added", "success");
     },
     onError: (err) =>
       setError(err instanceof ApiError ? err.detail : "Failed to create connection"),
+  });
+
+  const sampleMutation = useMutation({
+    mutationFn: () => connectionsApi.createSample(),
+    onSuccess: async (conn) => {
+      await finalizeConnection(conn);
+      toast("Sample store ready — open Ask to try a question", "success");
+    },
+    onError: (err) =>
+      setError(err instanceof ApiError ? err.detail : "Could not create sample database"),
   });
 
   const uploadMutation = useMutation({
@@ -236,13 +259,9 @@ export function ConnectionsPage() {
       return connectionsApi.upload(uploadName, uploadFile);
     },
     onSuccess: async (conn) => {
-      setJustConnectedId(conn.id);
+      await finalizeConnection(conn);
       setUploadName("");
       setUploadFile(null);
-      setActiveConnectionId(conn.id);
-      await refreshConnections();
-      await queryClient.invalidateQueries({ queryKey: ["schema-tree", conn.id] });
-      toast("Connection added", "success");
     },
     onError: (err) => setError(err instanceof ApiError ? err.detail : "Upload failed"),
   });
@@ -342,12 +361,33 @@ export function ConnectionsPage() {
         title="Connections"
         description={
           isWelcome
-            ? "Step 1 of 3 — connect a data source, test it, then sync schema before asking questions."
-            : "Guided setup for a database or spreadsheet. Test, validate, then sync schema."
+            ? "Step 1 of 3 — connect a source (or try sample data). Schema syncs automatically when you save."
+            : "Test your source, save the connection, and schema syncs automatically."
         }
       />
 
       {error ? <Alert variant="danger">{error}</Alert> : null}
+
+      {isWelcome || connections.length === 0 ? (
+        <Card className="border-accent/25 bg-accent-muted/20">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="font-medium text-text-primary">Quick start with sample data</p>
+              <p className="mt-0.5 text-sm text-text-secondary">
+                Loads a demo SQLite store (users, orders, products) with schema synced — no file setup.
+              </p>
+            </div>
+            <Button
+              loading={sampleMutation.isPending}
+              disabled={sampleMutation.isPending || createConnection.isPending || uploadMutation.isPending}
+              onClick={() => sampleMutation.mutate()}
+            >
+              <Database className="h-4 w-4" aria-hidden />
+              Try sample data
+            </Button>
+          </div>
+        </Card>
+      ) : null}
 
       {showPostConnectCta ? (
         <Card className="border-success/30 bg-success/5">
@@ -355,18 +395,25 @@ export function ConnectionsPage() {
             <div>
               <p className="font-medium text-text-primary">Connection ready</p>
               <p className="mt-0.5 text-sm text-text-secondary">
-                {tableCount > 0
-                  ? `Schema cached with ${tableCount} table${tableCount === 1 ? "" : "s"}. Explore your schema, then ask your first question.`
-                  : "Run Sync to load your schema, then explore tables before asking questions."}
+                {syncingId === justConnectedId
+                  ? "Syncing schema…"
+                  : tableCount > 0
+                    ? `Schema cached with ${tableCount} table${tableCount === 1 ? "" : "s"}. Ask a question or explore schema.`
+                    : "Schema sync did not finish — run Sync below, then open Ask."}
               </p>
             </div>
-            {tableCount > 0 ? (
-              <Link to="/schema">
-                <Button>
-                  Explore schema
-                  <ArrowRight className="h-4 w-4" />
-                </Button>
-              </Link>
+            {tableCount > 0 && syncingId !== justConnectedId ? (
+              <div className="flex flex-wrap gap-2">
+                <Link to="/ask" className="no-underline">
+                  <Button>
+                    Open Ask
+                    <ArrowRight className="h-4 w-4" />
+                  </Button>
+                </Link>
+                <Link to="/schema" className="no-underline">
+                  <Button variant="secondary">Explore schema</Button>
+                </Link>
+              </div>
             ) : (
               <Button
                 onClick={() => justConnectedId && void handleSync(justConnectedId, false)}
@@ -424,7 +471,6 @@ export function ConnectionsPage() {
                 id="sqlite-name"
                 value={sqliteName}
                 onChange={(e) => setSqliteName(e.target.value)}
-                placeholder="My analytics DB"
                 required
               />
             </div>
@@ -437,7 +483,6 @@ export function ConnectionsPage() {
                   setSqlitePath(e.target.value);
                   setSqliteTest({ status: "idle" });
                 }}
-                placeholder="C:\data\sample.db"
                 required
               />
             </div>
@@ -482,7 +527,6 @@ export function ConnectionsPage() {
                   id="server-name"
                   value={serverName}
                   onChange={(e) => setServerName(e.target.value)}
-                  placeholder="Production warehouse"
                   required
                 />
               </div>
@@ -512,7 +556,6 @@ export function ConnectionsPage() {
                     setServerHost(e.target.value);
                     setServerTest({ status: "idle" });
                   }}
-                  placeholder="localhost"
                   required
                 />
               </div>
@@ -569,7 +612,6 @@ export function ConnectionsPage() {
                   setServerDatabase(e.target.value);
                   setServerTest({ status: "idle" });
                 }}
-                placeholder="analytics"
                 required
               />
             </div>
@@ -618,7 +660,6 @@ export function ConnectionsPage() {
                 id="upload-name"
                 value={uploadName}
                 onChange={(e) => setUploadName(e.target.value)}
-                placeholder="Sales data"
                 required
               />
             </div>
@@ -735,10 +776,7 @@ export function ConnectionsPage() {
       </section>
 
       {activeConnectionId ? (
-        <ConnectionAliasesSection
-          connectionId={activeConnectionId}
-          connectionName={connections.find((conn) => conn.id === activeConnectionId)?.name ?? "this connection"}
-        />
+        <ConnectionAliasesSection connectionId={activeConnectionId} />
       ) : null}
 
       {!hasSchema && connections.length > 0 ? (

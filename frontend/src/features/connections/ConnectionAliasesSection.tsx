@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowRight, Loader2, Plus, Trash2 } from "lucide-react";
+import { ArrowRight, Check, Loader2, Pencil, Plus, Sparkles, Trash2, X } from "lucide-react";
 import { useToast } from "@/app/ToastContext";
 import { ApiError } from "@/lib/api/client";
 import { connectionsApi, schemaApi } from "@/lib/api/endpoints";
-import type { SchemaAlias, SchemaAliasType } from "@/lib/api/types";
+import type { SchemaAlias, SchemaAliasSuggestion, SchemaAliasType } from "@/lib/api/types";
 import { Alert } from "@/components/ui/Alert";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -16,13 +16,9 @@ import { PageListSkeleton } from "@/components/ui/Skeleton";
 
 type ConnectionAliasesSectionProps = {
   connectionId: number;
-  connectionName: string;
 };
 
-export function ConnectionAliasesSection({
-  connectionId,
-  connectionName,
-}: ConnectionAliasesSectionProps) {
+export function ConnectionAliasesSection({ connectionId }: ConnectionAliasesSectionProps) {
   const { push: toast } = useToast();
   const queryClient = useQueryClient();
   const [error, setError] = useState("");
@@ -45,6 +41,14 @@ export function ConnectionAliasesSection({
     () => schemaQuery.data?.tables.map((table) => table.name) ?? [],
     [schemaQuery.data],
   );
+
+  const hasSchema = tableNames.length > 0;
+
+  const suggestionsQuery = useQuery({
+    queryKey: ["connection-alias-suggestions", connectionId],
+    queryFn: () => connectionsApi.listAliasSuggestions(connectionId),
+    enabled: hasSchema,
+  });
 
   const columnOptions = useMemo(() => {
     const table = schemaQuery.data?.tables.find((entry) => entry.name === targetTable);
@@ -78,6 +82,7 @@ export function ConnectionAliasesSection({
       setAliasToken("");
       setError("");
       await queryClient.invalidateQueries({ queryKey: ["connection-aliases", connectionId] });
+      await queryClient.invalidateQueries({ queryKey: ["connection-alias-suggestions", connectionId] });
       toast("Alias added", "success");
     },
     onError: (err) => {
@@ -89,10 +94,49 @@ export function ConnectionAliasesSection({
     mutationFn: (aliasId: number) => connectionsApi.deleteAlias(connectionId, aliasId),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["connection-aliases", connectionId] });
+      await queryClient.invalidateQueries({ queryKey: ["connection-alias-suggestions", connectionId] });
       toast("Alias removed", "success");
     },
     onError: (err) => {
       toast(err instanceof ApiError ? err.detail : "Failed to remove alias", "error");
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: ({
+      aliasId,
+      payload,
+    }: {
+      aliasId: number;
+      payload: { alias_token: string; target_table: string; target_column?: string };
+    }) => connectionsApi.updateAlias(connectionId, aliasId, payload),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["connection-aliases", connectionId] });
+      await queryClient.invalidateQueries({ queryKey: ["connection-alias-suggestions", connectionId] });
+      toast("Alias updated", "success");
+    },
+    onError: (err) => {
+      toast(err instanceof ApiError ? err.detail : "Failed to update alias", "error");
+    },
+  });
+
+  const addSuggestionMutation = useMutation({
+    mutationFn: (suggestion: SchemaAliasSuggestion) =>
+      connectionsApi.createAlias(connectionId, {
+        alias_type: suggestion.alias_type,
+        alias_token: suggestion.alias_token,
+        target_table: suggestion.target_table,
+        ...(suggestion.alias_type === "column" && suggestion.target_column
+          ? { target_column: suggestion.target_column }
+          : {}),
+      }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["connection-aliases", connectionId] });
+      await queryClient.invalidateQueries({ queryKey: ["connection-alias-suggestions", connectionId] });
+      toast("Suggested alias added", "success");
+    },
+    onError: (err) => {
+      toast(err instanceof ApiError ? err.detail : "Failed to add suggested alias", "error");
     },
   });
 
@@ -114,16 +158,16 @@ export function ConnectionAliasesSection({
     createMutation.mutate();
   }
 
-  const hasSchema = tableNames.length > 0;
   const aliases = aliasesQuery.data ?? [];
+  const suggestions = suggestionsQuery.data ?? [];
 
   return (
     <Card>
       <CardHeader>
         <CardTitle>Business language aliases</CardTitle>
         <CardDescription>
-          Teach SchemaSay how {connectionName} talks about data. Map terms like{" "}
-          <span className="font-medium text-text-primary">buyer</span> to real tables and columns.
+          Map your business terms to the tables and columns in this data source so SchemaSay can
+          understand natural-language questions more accurately.
         </CardDescription>
       </CardHeader>
 
@@ -141,6 +185,41 @@ export function ConnectionAliasesSection({
               Sync schema for this connection before adding aliases. Aliases must point at tables and
               columns from your cached schema.
             </Alert>
+          ) : null}
+
+          {suggestions.length > 0 ? (
+            <div className="rounded-[var(--radius-md)] border border-accent/20 bg-accent-muted/15 p-3">
+              <div className="flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-accent" aria-hidden />
+                <p className="text-sm font-medium text-text-primary">Suggested after schema sync</p>
+              </div>
+              <ul className="mt-3 space-y-2">
+                {suggestions.slice(0, 6).map((suggestion) => {
+                  const targetKey =
+                    suggestion.alias_type === "column" && suggestion.target_column
+                      ? `${suggestion.target_table}.${suggestion.target_column}`
+                      : suggestion.target_table;
+                  return (
+                    <li
+                      key={`${suggestion.alias_type}-${suggestion.alias_token}-${targetKey}`}
+                      className="flex flex-col gap-2 rounded-md border border-border-subtle bg-bg-surface px-3 py-2 sm:flex-row sm:items-center sm:justify-between"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-sm text-text-primary">{suggestion.reason}</p>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        disabled={addSuggestionMutation.isPending}
+                        onClick={() => addSuggestionMutation.mutate(suggestion)}
+                      >
+                        Add
+                      </Button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
           ) : null}
 
           {aliases.length > 0 ? (
@@ -161,8 +240,12 @@ export function ConnectionAliasesSection({
                     <AliasRow
                       key={alias.id}
                       alias={alias}
+                      tableNames={tableNames}
+                      tables={schemaQuery.data?.tables ?? []}
                       onDelete={() => deleteMutation.mutate(alias.id)}
+                      onSave={(payload) => updateMutation.mutate({ aliasId: alias.id, payload })}
                       deleting={deleteMutation.isPending}
+                      saving={updateMutation.isPending}
                     />
                   ))}
                 </tbody>
@@ -170,8 +253,8 @@ export function ConnectionAliasesSection({
             </div>
           ) : (
             <p className="text-sm text-text-muted">
-              No aliases yet. Add one below so natural-language questions match your schema more
-              reliably.
+              No aliases yet. Add one below or accept a suggestion so natural-language questions
+              match your schema more reliably.
             </p>
           )}
 
@@ -197,9 +280,12 @@ export function ConnectionAliasesSection({
                   id="alias-token"
                   value={aliasToken}
                   onChange={(event) => setAliasToken(event.target.value)}
-                  placeholder={aliasType === "table" ? "buyer" : "income"}
+                  placeholder={aliasType === "table" ? "customer" : "order date"}
                   disabled={!hasSchema || createMutation.isPending}
                 />
+                <p className="mt-1 text-xs text-text-muted">
+                  Spaces are fine — SchemaSay matches phrases like order date too.
+                </p>
               </div>
             </div>
 
@@ -259,17 +345,102 @@ export function ConnectionAliasesSection({
 
 function AliasRow({
   alias,
+  tableNames,
+  tables,
   onDelete,
+  onSave,
   deleting,
+  saving,
 }: {
   alias: SchemaAlias;
+  tableNames: string[];
+  tables: { name: string; columns: { name: string }[] }[];
   onDelete: () => void;
+  onSave: (payload: { alias_token: string; target_table: string; target_column?: string }) => void;
   deleting: boolean;
+  saving: boolean;
 }) {
+  const [editing, setEditing] = useState(false);
+  const [aliasToken, setAliasToken] = useState(alias.alias_token);
+  const [targetTable, setTargetTable] = useState(alias.target_table);
+  const [targetColumn, setTargetColumn] = useState(alias.target_column ?? "");
+  const columnOptions =
+    tables.find((table) => table.name === targetTable)?.columns.map((column) => column.name) ?? [];
+
+  useEffect(() => {
+    if (!editing) {
+      setAliasToken(alias.alias_token);
+      setTargetTable(alias.target_table);
+      setTargetColumn(alias.target_column ?? "");
+    }
+  }, [alias, editing]);
+
   const target =
     alias.alias_type === "column" && alias.target_column
       ? `${alias.target_table}.${alias.target_column}`
       : alias.target_table;
+
+  function handleSave() {
+    if (!aliasToken.trim() || !targetTable) return;
+    if (alias.alias_type === "column" && !targetColumn) return;
+    onSave({
+      alias_token: aliasToken.trim(),
+      target_table: targetTable,
+      ...(alias.alias_type === "column" ? { target_column: targetColumn } : {}),
+    });
+    setEditing(false);
+  }
+
+  if (editing) {
+    return (
+      <tr className="border-t border-border-subtle bg-bg-elevated/40">
+        <td className="px-3 py-2">
+          <Input value={aliasToken} onChange={(event) => setAliasToken(event.target.value)} />
+        </td>
+        <td className="px-3 py-2">
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <select
+              value={targetTable}
+              onChange={(event) => setTargetTable(event.target.value)}
+              className="control-base w-full px-2 py-1.5 text-sm"
+            >
+              {tableNames.map((table) => (
+                <option key={table} value={table}>
+                  {table}
+                </option>
+              ))}
+            </select>
+            {alias.alias_type === "column" ? (
+              <select
+                value={targetColumn}
+                onChange={(event) => setTargetColumn(event.target.value)}
+                className="control-base w-full px-2 py-1.5 text-sm"
+              >
+                {columnOptions.map((column) => (
+                  <option key={column} value={column}>
+                    {column}
+                  </option>
+                ))}
+              </select>
+            ) : null}
+          </div>
+        </td>
+        <td className="px-3 py-2">
+          <Badge variant="default">{alias.alias_type}</Badge>
+        </td>
+        <td className="px-3 py-2 text-right">
+          <div className="flex justify-end gap-1">
+            <Button variant="ghost" size="sm" onClick={handleSave} disabled={saving} title="Save alias">
+              <Check className="h-3.5 w-3.5" />
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => setEditing(false)} disabled={saving} title="Cancel">
+              <X className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        </td>
+      </tr>
+    );
+  }
 
   return (
     <tr className="border-t border-border-subtle">
@@ -284,9 +455,14 @@ function AliasRow({
         <Badge variant="default">{alias.alias_type}</Badge>
       </td>
       <td className="px-3 py-2 text-right">
-        <Button variant="ghost" size="sm" onClick={onDelete} disabled={deleting} title="Remove alias">
-          <Trash2 className="h-3.5 w-3.5" />
-        </Button>
+        <div className="flex justify-end gap-1">
+          <Button variant="ghost" size="sm" onClick={() => setEditing(true)} disabled={saving} title="Edit alias">
+            <Pencil className="h-3.5 w-3.5" />
+          </Button>
+          <Button variant="ghost" size="sm" onClick={onDelete} disabled={deleting} title="Remove alias">
+            <Trash2 className="h-3.5 w-3.5" />
+          </Button>
+        </div>
       </td>
     </tr>
   );
