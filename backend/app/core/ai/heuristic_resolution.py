@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 from typing import Dict, List, Optional, Set, Tuple
 
-from app.core.ai.heuristic_aliases import AliasContext, table_tokens_in_question
+from app.core.ai.heuristic_aliases import AliasContext, alias_keys_in_question, table_tokens_in_question
 from app.core.ai.heuristic_intent import IntentResult, QueryIntent
 from app.core.schema.graph import SchemaGraph
 
@@ -121,6 +121,11 @@ def score_tables(
             if len(token) >= 4 and ratio >= FUZZY_TABLE_THRESHOLD:
                 add_score(table, 7.0 * ratio, f"fuzzy_token:{token}")
 
+    for alias_key in alias_keys_in_question(question_lower, alias_context.table_aliases):
+        resolved = alias_context.resolve_table(alias_key, known)
+        if resolved:
+            add_score(resolved, 8.0, f"alias:{alias_key}")
+
     for table, columns in tables_columns.items():
         for col in columns:
             if re.search(r"\b" + re.escape(col.lower()) + r"\b", question_lower):
@@ -138,6 +143,14 @@ def score_tables(
         for table, columns in tables_columns.items():
             if any(col_hint in col.lower() for col in columns):
                 add_score(table, 3.0, f"column_alias:{token}")
+
+    for alias_key in alias_keys_in_question(question_lower, alias_context.column_aliases):
+        col_hint = alias_context.column_aliases.get(alias_key)
+        if not col_hint:
+            continue
+        for table, columns in tables_columns.items():
+            if any(col_hint in col.lower() for col in columns):
+                add_score(table, 3.0, f"column_alias:{alias_key}")
 
     for table in list(raw.keys()):
         hub_bonus = hub_scores.get(table, 0) * HUB_SCORE_WEIGHT
@@ -239,6 +252,11 @@ def score_columns(
             mapped = alias_context.resolve_column_hint(token)
             if mapped and mapped.lower() in cl:
                 add_score(col, 8.0, f"alias:{token}")
+
+        for alias_key in alias_keys_in_question(question_lower, alias_context.column_aliases):
+            mapped = alias_context.column_aliases.get(alias_key)
+            if mapped and mapped.lower() in cl:
+                add_score(col, 8.0, f"alias:{alias_key}")
 
         cat = _column_type_category(column_types.get(col, ""))
         if prefer_numeric and cat == "numeric":

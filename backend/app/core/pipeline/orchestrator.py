@@ -17,9 +17,9 @@ from app.core.explanation.confidence import compute_confidence_score
 from app.core.governance.policies import evaluate_sql_policy
 from app.core.grounding.validator import validate_sql_grounding
 from app.core.schema.graph import SchemaGraph
-from app.core.schema.loader import load_schema_graph, load_schema_metadata
+from app.core.schema.loader import load_schema_bundle, load_schema_graph
 from app.core.security.sql_validator import validate_sql_structure
-from app.core.learning.retrieval import find_similar_examples, pick_high_confidence_example
+from app.core.learning.retrieval import find_similar_examples
 from app.core.semantics.resolver import resolve_metric_question
 from app.core.visualization.chart_service import select_chart_type, ChartConfig
 from app.models.connection import DatabaseConnection
@@ -102,7 +102,7 @@ class QueryPipeline:
         question: str,
     ) -> PipelineResult:
         correlation_id = str(uuid.uuid4())
-        graph = load_schema_graph(self.db, connection.id)
+        schema_metadata, graph = load_schema_bundle(self.db, connection.id)
 
         metrics = (
             self.db.query(MetricDefinition)
@@ -132,6 +132,7 @@ class QueryPipeline:
         heuristic_compile_confidence = None
         heuristic_intent = None
         routing_decision = None
+        escalation_reason = None
         validation_passed = None
         calibrated_confidence = None
         component_confidence = None
@@ -146,7 +147,6 @@ class QueryPipeline:
             metric_label = resolved.metric_label
             extra_assumptions = resolved.assumptions
         else:
-            schema_metadata = load_schema_metadata(self.db, connection.id)
             examples = find_similar_examples(
                 question=question,
                 connection_id=connection.id,
@@ -164,41 +164,35 @@ class QueryPipeline:
                 for example in examples
             ]
 
-            direct_example = pick_high_confidence_example(question, examples)
-            if direct_example:
-                generated_sql = direct_example.sql
+            alias_context = load_alias_context(self.db, connection.id)
+            generation = generate_sql(
+                question=question,
+                db_type=connection.db_type,
+                schema_metadata=schema_metadata,
+                verified_examples=verified_payload,
+                alias_context=alias_context,
+            )
+            generated_sql = generation.sql
+            used_llm = generation.used_llm
+            escalation_reason = generation.escalation_reason
+            routing_decision = generation.routing_decision
+            validation_passed = generation.validation_passed
+            validation_issues = generation.validation_issues or []
+            if generation.provider == "learning_example":
                 resolution_source = "learning_example"
+            elif used_llm:
+                resolution_source = "llm"
+                llm_provider = generation.provider
+                llm_model = generation.model
             else:
-                alias_context = load_alias_context(self.db, connection.id)
-                generation = generate_sql(
-                    question=question,
-                    db_type=connection.db_type,
-                    schema_metadata=schema_metadata,
-                    verified_examples=verified_payload,
-                    alias_context=alias_context,
-                )
-                generated_sql = generation.sql
-                used_llm = generation.used_llm
-                if generation.provider == "learning_example":
-                    resolution_source = "learning_example"
-                elif used_llm:
-                    resolution_source = "llm"
-                    llm_provider = generation.provider
-                    llm_model = generation.model
-                    routing_decision = generation.routing_decision
-                    validation_passed = generation.validation_passed
-                else:
-                    resolution_source = "heuristic"
-                    heuristic_tier = generation.heuristic_tier
-                    heuristic_intent = generation.heuristic_intent
-                    routing_decision = generation.routing_decision
-                    validation_passed = generation.validation_passed
-                    component_confidence = generation.component_confidence
-                    validation_issues = generation.validation_issues or []
-                    if generation.heuristic_confidence is not None:
-                        heuristic_compile_confidence = int(round(generation.heuristic_confidence * 100))
-                    if generation.calibrated_confidence is not None:
-                        calibrated_confidence = int(round(generation.calibrated_confidence * 100))
+                resolution_source = "heuristic"
+                heuristic_tier = generation.heuristic_tier
+                heuristic_intent = generation.heuristic_intent
+                component_confidence = generation.component_confidence
+                if generation.heuristic_confidence is not None:
+                    heuristic_compile_confidence = int(round(generation.heuristic_confidence * 100))
+                if generation.calibrated_confidence is not None:
+                    calibrated_confidence = int(round(generation.calibrated_confidence * 100))
 
         return self._run_execution_path(
             user_id=user_id,
@@ -220,6 +214,7 @@ class QueryPipeline:
             heuristic_compile_confidence=heuristic_compile_confidence,
             heuristic_intent=heuristic_intent,
             routing_decision=routing_decision,
+            escalation_reason=escalation_reason,
             validation_passed=validation_passed,
             calibrated_confidence=calibrated_confidence,
             component_confidence=component_confidence,
@@ -268,6 +263,7 @@ class QueryPipeline:
         heuristic_compile_confidence: Optional[int] = None,
         heuristic_intent: Optional[str] = None,
         routing_decision: Optional[str] = None,
+        escalation_reason: Optional[str] = None,
         validation_passed: Optional[bool] = None,
         calibrated_confidence: Optional[int] = None,
         component_confidence: Optional[dict] = None,
@@ -319,6 +315,7 @@ class QueryPipeline:
             calibrated_confidence=calibrated_confidence,
             heuristic_intent=heuristic_intent,
             used_llm=used_llm,
+            escalation_reason=escalation_reason,
             validation_issues=validation_issues or [],
             component_confidence=component_confidence,
             false_confidence=detect_false_confidence(

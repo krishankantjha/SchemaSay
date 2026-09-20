@@ -10,6 +10,8 @@ from typing import Dict, List, Optional, Set
 
 from sqlalchemy.orm import Session
 
+from app.core.schema.alias_validation import normalize_alias_token
+
 # Global defaults — overridden by per-connection aliases when present.
 DEFAULT_TABLE_ALIASES: Dict[str, str] = {
     "customer": "users",
@@ -51,6 +53,27 @@ DEFAULT_COLUMN_ALIASES: Dict[str, str] = {
 }
 
 
+def alias_phrase_variants(token: str) -> List[str]:
+    """Match stored tokens as underscores or as spaced phrases in questions."""
+    lowered = token.lower()
+    variants = [lowered]
+    spaced = lowered.replace("_", " ")
+    if spaced != lowered:
+        variants.append(spaced)
+    return variants
+
+
+def alias_keys_in_question(question_lower: str, aliases: Dict[str, str]) -> List[str]:
+    """Return alias keys found in a question, longest matches first."""
+    matched: List[str] = []
+    for key in sorted(aliases.keys(), key=len, reverse=True):
+        for variant in alias_phrase_variants(key):
+            if re.search(r"\b" + re.escape(variant) + r"\b", question_lower):
+                matched.append(key)
+                break
+    return matched
+
+
 @dataclass
 class AliasContext:
     table_aliases: Dict[str, str] = field(default_factory=dict)
@@ -64,7 +87,7 @@ class AliasContext:
         )
 
     def resolve_table(self, token: str, known_tables: Set[str]) -> Optional[str]:
-        lowered = token.lower()
+        lowered = normalize_alias_token(token)
         for table in known_tables:
             if table.lower() == lowered:
                 return table
@@ -91,7 +114,11 @@ class AliasContext:
         return None
 
     def resolve_column_hint(self, token: str) -> str:
-        return self.column_aliases.get(token.lower(), token)
+        lowered = token.lower().strip()
+        normalized = normalize_alias_token(lowered)
+        if normalized in self.column_aliases:
+            return self.column_aliases[normalized]
+        return self.column_aliases.get(lowered, token)
 
     def resolve_column(self, hint: str, columns: List[str]) -> Optional[str]:
         mapped = self.resolve_column_hint(hint)

@@ -16,6 +16,7 @@ from app.core.ai.llm_client import (
     complete_chat_with_fallback,
     list_llm_clients,
 )
+from app.core.ai.llm_schema_context import select_schema_for_llm
 from app.core.grounding.validator import validate_sql_grounding
 from app.core.schema.graph import SchemaGraph
 from app.core.security.sql_validator import validate_sql_structure
@@ -45,6 +46,7 @@ class SqlGenerationResult:
     heuristic_intent: Optional[str] = None
     calibrated_confidence: Optional[float] = None
     routing_decision: Optional[str] = None
+    escalation_reason: Optional[str] = None
     validation_passed: Optional[bool] = None
     component_confidence: Optional[Dict[str, float]] = None
     validation_issues: List[str] = field(default_factory=list)
@@ -154,6 +156,7 @@ def generate_sql(
 
     route = decide_heuristic_route(heuristic)
     require_semantic = route.action == RouteAction.HEURISTIC_VALIDATE
+    escalation_reason = route.reason if route.action == RouteAction.LLM else None
 
     if route.action in (RouteAction.HEURISTIC_EXECUTE, RouteAction.HEURISTIC_VALIDATE) and heuristic.sql:
         validation = validate_heuristic_sql(
@@ -184,6 +187,7 @@ def generate_sql(
             heuristic.tier,
             validation.issues,
         )
+        escalation_reason = "validation_failed"
 
     if not list_llm_clients():
         sql = heuristic.sql if heuristic.sql else "SELECT 1"
@@ -197,15 +201,17 @@ def generate_sql(
             used_llm=False,
             provider="heuristic",
             routing_decision=RouteAction.FALLBACK.value,
+            escalation_reason=escalation_reason or "no_llm_configured",
             **_heuristic_result_payload(heuristic),
         )
 
     max_schema_items = 200
-    is_truncated = False
-    llm_schema = schema_metadata
-    if len(schema_metadata) > max_schema_items:
-        llm_schema = schema_metadata[:max_schema_items]
-        is_truncated = True
+    llm_schema, is_truncated = select_schema_for_llm(
+        schema_metadata,
+        schema_graph,
+        heuristic,
+        max_items=max_schema_items,
+    )
 
     schema_context = []
     for entry in llm_schema:
@@ -291,6 +297,7 @@ def generate_sql(
             provider=completion.provider,
             model=completion.model,
             routing_decision=RouteAction.LLM.value,
+            escalation_reason=escalation_reason or route.reason,
             validation_passed=llm_valid,
         )
     except Exception as e:

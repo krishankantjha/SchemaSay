@@ -11,6 +11,7 @@ from typing import List, Optional, Set, Tuple
 import sqlglot
 from sqlglot import exp
 
+from app.config import settings
 from app.core.ai.heuristic_compiler import HEURISTIC_CONFIDENCE_MEDIUM, HeuristicCompileResult
 from app.core.grounding.validator import GroundingResult, validate_sql_grounding
 from app.core.schema.graph import JoinEdge, SchemaGraph
@@ -231,11 +232,11 @@ def validate_heuristic_sql(
 
     overall_valid = safety_valid and grounding_valid and join_valid and semantic_valid
 
-    min_confidence = HEURISTIC_CONFIDENCE_MEDIUM
+    l3_min = settings.HEURISTIC_L3_MIN_CONFIDENCE
     if heuristic.tier in ("L1", "L2"):
-        can_execute = overall_valid and calibrated >= min_confidence
-    elif heuristic.tier == "L3":
         can_execute = overall_valid and calibrated >= HEURISTIC_CONFIDENCE_MEDIUM
+    elif heuristic.tier == "L3":
+        can_execute = overall_valid and calibrated >= l3_min
     else:
         can_execute = overall_valid and calibrated >= HEURISTIC_CONFIDENCE_MEDIUM
 
