@@ -43,6 +43,23 @@ class AuditLogDetailResponse(BaseModel):
         from_attributes = True
 
 
+class AuditStatsResponse(BaseModel):
+    """Routing and performance summary for recent audit logs."""
+    total_queries: int = 0
+    success_count: int = 0
+    failed_count: int = 0
+    avg_duration_ms: int = 0
+    heuristic_count: int = 0
+    llm_count: int = 0
+    metric_count: int = 0
+    learning_count: int = 0
+    other_count: int = 0
+    heuristic_percent: float = 0.0
+    llm_percent: float = 0.0
+    escalation_reasons: Dict[str, int] = Field(default_factory=dict)
+    sample_size: int = 0
+
+
 class AuditReplayResponse(BaseModel):
     audit_id: int
     sql: str

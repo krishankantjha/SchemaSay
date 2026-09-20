@@ -160,6 +160,15 @@ class SchemaAliasResponse(BaseModel):
         from_attributes = True
 
 
+class SchemaAliasSuggestionResponse(BaseModel):
+    """Suggested alias mapping derived from synced schema metadata."""
+    alias_type: Literal["table", "column"]
+    alias_token: str
+    target_table: str
+    target_column: Optional[str] = None
+    reason: str
+
+
 class AuditLogResponse(BaseModel):
     """
     Output serialization schema for query execution logs and history records.

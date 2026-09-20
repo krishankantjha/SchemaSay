@@ -7,8 +7,15 @@ from sqlalchemy.orm import Session
 
 from app.core.governance.pii import detect_pii_column
 from app.core.schema.introspector import reflect_database_schema
+from app.core.schema.memory_cache import schema_memory_cache
 from app.core.schema.profiler import profile_schema_metadata
-from app.models.connection import DatabaseConnection, DatabaseSchemaCache, SchemaTableStats
+from app.core.schema.alias_suggestions import suggest_aliases_from_metadata
+from app.models.connection import (
+    ConnectionSchemaAlias,
+    DatabaseConnection,
+    DatabaseSchemaCache,
+    SchemaTableStats,
+)
 
 
 def _serialize_sample_values(value) -> str | None:
@@ -75,9 +82,30 @@ def sync_connection_schema_cache(
         db.bulk_save_objects(stats_entries)
 
     db.commit()
+    schema_memory_cache.invalidate(connection.id)
+
+    existing_aliases = (
+        db.query(ConnectionSchemaAlias)
+        .filter(ConnectionSchemaAlias.connection_id == connection.id)
+        .all()
+    )
+    suggested = suggest_aliases_from_metadata(
+        metadata_list,
+        [{"alias_token": alias.alias_token} for alias in existing_aliases],
+    )
 
     return {
         "columns_synced": len(cache_entries),
         "tables_synced": len({entry["table_name"] for entry in metadata_list}),
         "profiled_tables": len(table_stats),
+        "suggested_aliases": [
+            {
+                "alias_type": item.alias_type,
+                "alias_token": item.alias_token,
+                "target_table": item.target_table,
+                "target_column": item.target_column,
+                "reason": item.reason,
+            }
+            for item in suggested
+        ],
     }

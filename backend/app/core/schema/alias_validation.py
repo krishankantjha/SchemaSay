@@ -13,7 +13,11 @@ _ALIAS_TOKEN_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 
 
 def normalize_alias_token(token: str) -> str:
-    return token.strip().lower()
+    """Lowercase and convert spaces/hyphens to underscores for storage."""
+    text = token.strip().lower()
+    text = re.sub(r"[\s\-]+", "_", text)
+    text = re.sub(r"_+", "_", text)
+    return text.strip("_")
 
 
 def validate_alias_token(token: str) -> Optional[str]:
