@@ -11,7 +11,13 @@ from app.core.pipeline import PipelineError, QueryPipeline
 from app.database import get_db
 from app.models.connection import DatabaseConnection, QueryAuditLog
 from app.models.user import User
-from app.schemas.governance import AuditLogDetailResponse, AuditReplayResponse, AuditTelemetryResponse
+from app.core.audit.stats import compute_audit_routing_stats
+from app.schemas.governance import (
+    AuditLogDetailResponse,
+    AuditReplayResponse,
+    AuditStatsResponse,
+    AuditTelemetryResponse,
+)
 
 router = APIRouter(prefix="/audit", tags=["Query Audit & Governance"])
 
@@ -47,6 +53,41 @@ def _audit_to_response(log: QueryAuditLog) -> AuditLogDetailResponse:
         heuristic_compile_confidence=log.heuristic_compile_confidence,
         eval_telemetry=eval_telemetry,
         created_at=log.created_at,
+    )
+
+
+@router.get("/stats", response_model=AuditStatsResponse)
+def get_audit_stats(
+    connection_id: Optional[int] = Query(None, gt=0),
+    sample_limit: int = Query(250, ge=1, le=500),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Routing breakdown and performance summary from recent audit logs."""
+    query = db.query(QueryAuditLog).filter(QueryAuditLog.user_id == current_user.id)
+    if connection_id is not None:
+        query = query.filter(QueryAuditLog.connection_id == connection_id)
+
+    logs = (
+        query.order_by(QueryAuditLog.created_at.desc())
+        .limit(sample_limit)
+        .all()
+    )
+    stats = compute_audit_routing_stats(logs)
+    return AuditStatsResponse(
+        total_queries=stats.total_queries,
+        success_count=stats.success_count,
+        failed_count=stats.failed_count,
+        avg_duration_ms=stats.avg_duration_ms,
+        heuristic_count=stats.heuristic_count,
+        llm_count=stats.llm_count,
+        metric_count=stats.metric_count,
+        learning_count=stats.learning_count,
+        other_count=stats.other_count,
+        heuristic_percent=stats.heuristic_percent,
+        llm_percent=stats.llm_percent,
+        escalation_reasons=stats.escalation_reasons,
+        sample_size=len(logs),
     )
 
 

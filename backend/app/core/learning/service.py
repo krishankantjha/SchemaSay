@@ -71,6 +71,13 @@ def create_query_feedback(
     if rating == "thumbs_down" and not categories and not normalized_comment:
         raise ValueError("Select at least one reason or add a short note for negative feedback.")
 
+    if rating == "thumbs_up":
+        learning_sql = (corrected_sql or generated_sql or "").strip()
+        if not learning_sql:
+            raise ValueError(
+                "generated_sql is required for positive feedback so verified answers can improve future queries."
+            )
+
     if rating == "corrected":
         if not corrected_sql or not corrected_sql.strip():
             raise ValueError("corrected_sql is required when rating is 'corrected'.")

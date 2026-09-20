@@ -20,12 +20,16 @@ from app.schemas.connection import (
     AuditLogResponse,
     SchemaAliasCreate,
     SchemaAliasResponse,
+    SchemaAliasSuggestionResponse,
     SchemaAliasUpdate,
 )
+from app.core.schema.alias_suggestions import suggest_aliases_from_metadata
 from app.schemas.governance import ConnectionPolicyResponse, ConnectionPolicyUpdate
 from app.api.routes.auth import get_current_user
 from app.core.connections.encryptor import decrypt_password, encrypt_password
 from app.core.connections.connector import test_connection, process_file_upload, dispose_connection_engine, get_connection
+from app.core.connections.sample_db import create_sample_sqlite_path
+from app.core.schema.memory_cache import schema_memory_cache
 from app.core.schema.sync_service import sync_connection_schema_cache
 from app.core.schema.alias_validation import (
     load_schema_index,
@@ -187,29 +191,7 @@ def create_connection(payload: ConnectionCreate, db: Session = Depends(get_db), 
         encrypted_password=encrypted_pw
     )
     
-    db.add(db_connection)
-    db.commit()
-    db.refresh(db_connection)
-    
-    # Auto-sync schema cache on database connection registration
-    try:
-        engine = get_connection(db_connection)
-        result = sync_connection_schema_cache(
-            db=db,
-            connection=db_connection,
-            engine=engine,
-            profile=False,
-        )
-        logger.info(
-            "Auto-sync cached %s columns for connection ID: %s",
-            result["columns_synced"],
-            db_connection.id,
-        )
-        dispose_connection_engine(db_connection)
-    except Exception:
-        logger.exception("Auto-sync failed on database connection registration")
-
-    return db_connection
+    return _register_connection_with_auto_sync(db, db_connection)
 
 @router.post("/upload", response_model=ConnectionResponse, status_code=status.HTTP_201_CREATED)
 def upload_file_connection(
@@ -263,24 +245,73 @@ def upload_file_connection(
         database_name=sqlite_path  # The SQLite file path acts as the database name
     )
     
+    return _register_connection_with_auto_sync(db, db_connection)
+
+
+def _unique_connection_name(db: Session, user_id: int, base_name: str) -> str:
+    if not db.query(DatabaseConnection).filter(
+        DatabaseConnection.user_id == user_id,
+        DatabaseConnection.name == base_name,
+    ).first():
+        return base_name
+    counter = 2
+    while True:
+        candidate = f"{base_name} ({counter})"
+        if not db.query(DatabaseConnection).filter(
+            DatabaseConnection.user_id == user_id,
+            DatabaseConnection.name == candidate,
+        ).first():
+            return candidate
+        counter += 1
+
+
+def _register_connection_with_auto_sync(
+    db: Session,
+    db_connection: DatabaseConnection,
+) -> DatabaseConnection:
     db.add(db_connection)
     db.commit()
     db.refresh(db_connection)
-    
-    # Auto-sync schema cache on spreadsheet file uploads ingestion
+
     try:
         engine = get_connection(db_connection)
-        sync_connection_schema_cache(
+        result = sync_connection_schema_cache(
             db=db,
             connection=db_connection,
             engine=engine,
             profile=False,
         )
+        logger.info(
+            "Auto-sync cached %s columns for connection ID: %s",
+            result["columns_synced"],
+            db_connection.id,
+        )
         dispose_connection_engine(db_connection)
     except Exception:
-        logger.exception("Auto-sync failed on file upload ingestion")
+        logger.exception("Auto-sync failed for connection ID: %s", db_connection.id)
 
     return db_connection
+
+
+@router.post("/sample", response_model=ConnectionResponse, status_code=status.HTTP_201_CREATED)
+def create_sample_connection(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Creates a demo SQLite store (users, orders, products) and syncs schema automatically.
+    """
+    connection_name = _unique_connection_name(db, current_user.id, "Sample store")
+    sqlite_path = create_sample_sqlite_path()
+
+    db_connection = DatabaseConnection(
+        user_id=current_user.id,
+        name=connection_name,
+        db_type="sqlite",
+        database_name=sqlite_path,
+    )
+    return _register_connection_with_auto_sync(db, db_connection)
+
 
 @router.get("/", response_model=List[ConnectionResponse])
 def list_connections(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -384,6 +415,7 @@ def update_connection(
         DatabaseSchemaCache.connection_id == connection.id,
     ).delete(synchronize_session=False)
     db.commit()
+    schema_memory_cache.invalidate(connection.id)
     db.refresh(connection)
     dispose_connection_engine(connection)
     return connection
@@ -419,6 +451,7 @@ def delete_connection(connection_id: int, db: Session = Depends(get_db), current
 
         db.delete(connection)
         db.commit()
+        schema_memory_cache.invalidate(connection_id)
     except Exception as exc:
         db.rollback()
         logger.error("Failed to delete connection %s: %s", connection_id, exc, exc_info=True)
@@ -460,6 +493,49 @@ def get_query_history(
     return query.order_by(
         QueryAuditLog.created_at.desc()
     ).offset((page_val - 1) * limit_val).limit(limit_val).all()
+
+
+@router.get("/{connection_id}/aliases/suggestions", response_model=List[SchemaAliasSuggestionResponse])
+def list_connection_alias_suggestions(
+    connection_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _get_user_connection(db, connection_id, current_user.id)
+    metadata_rows = (
+        db.query(DatabaseSchemaCache)
+        .filter(DatabaseSchemaCache.connection_id == connection_id)
+        .all()
+    )
+    if not metadata_rows:
+        return []
+
+    existing_aliases = (
+        db.query(ConnectionSchemaAlias)
+        .filter(ConnectionSchemaAlias.connection_id == connection_id)
+        .all()
+    )
+    suggestions = suggest_aliases_from_metadata(
+        [
+            {
+                "table_name": row.table_name,
+                "column_name": row.column_name,
+                "data_type": row.data_type,
+            }
+            for row in metadata_rows
+        ],
+        [{"alias_token": alias.alias_token} for alias in existing_aliases],
+    )
+    return [
+        SchemaAliasSuggestionResponse(
+            alias_type=item.alias_type,
+            alias_token=item.alias_token,
+            target_table=item.target_table,
+            target_column=item.target_column,
+            reason=item.reason,
+        )
+        for item in suggestions
+    ]
 
 
 @router.get("/{connection_id}/aliases", response_model=List[SchemaAliasResponse])
