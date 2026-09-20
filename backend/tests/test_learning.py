@@ -177,6 +177,32 @@ def test_negative_feedback_requires_reason_or_comment(client, db):
         os.remove(temp_db_path)
 
 
+def test_thumbs_up_requires_generated_sql_for_learning(client, db):
+    headers = _auth_headers(client)
+    temp_db_path = _create_orders_db()
+    create_conn = client.post(
+        "/api/v1/connections/",
+        json={"name": "Thumbs Up Validation DB", "db_type": "sqlite", "database_name": temp_db_path},
+        headers=headers,
+    )
+    connection_id = create_conn.json()["id"]
+
+    missing_sql = client.post(
+        "/api/v1/feedback/",
+        json={
+            "connection_id": connection_id,
+            "question": "Show total revenue by region",
+            "rating": "thumbs_up",
+        },
+        headers=headers,
+    )
+    assert missing_sql.status_code == status.HTTP_400_BAD_REQUEST
+
+    client.delete(f"/api/v1/connections/{connection_id}", headers=headers)
+    if os.path.exists(temp_db_path):
+        os.remove(temp_db_path)
+
+
 def test_corrected_sql_must_pass_safety_validation(client, db):
     headers = _auth_headers(client)
     temp_db_path = _create_orders_db()

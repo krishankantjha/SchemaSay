@@ -72,6 +72,15 @@ def test_per_connection_column_alias():
     assert "SUM(price)" in result.sql
 
 
+def test_column_alias_matches_spaced_phrase_in_question():
+    ctx = AliasContext.global_defaults()
+    ctx.column_aliases["created_date"] = "created_at"
+    schema = [e for e in SAMPLE_SCHEMA if e["table_name"] == "orders"]
+    result = compile_heuristic("total revenue by created date", "sqlite", schema, alias_context=ctx)
+    assert result.sql is not None
+    assert "created_at" in result.sql
+
+
 def test_fuzzy_token_matches_table():
     graph = SchemaGraph.from_schema_metadata(SAMPLE_SCHEMA)
     tables = _tables_columns(SAMPLE_SCHEMA)

@@ -302,6 +302,26 @@ def test_query_history_endpoint(client, db):
     assert len(logs_conn2) == 1
     assert logs_conn2[0]["question"] == "Select all products"
 
+def test_create_sample_connection(client):
+    """Sample store endpoint creates SQLite connection with synced schema cache."""
+    token = get_auth_token(client)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    response = client.post("/api/v1/connections/sample", headers=headers)
+    assert response.status_code == 201
+    data = response.json()
+    assert data["name"].startswith("Sample store")
+    assert data["db_type"] == "sqlite"
+    assert data["database_name"].endswith(".db")
+
+    tree_res = client.get(f"/api/v1/schema/{data['id']}/tree", headers=headers)
+    assert tree_res.status_code == 200
+    tables = {table["name"] for table in tree_res.json()["tables"]}
+    assert "orders" in tables
+    assert "users" in tables
+    assert "products" in tables
+
+
 # --- Helper Utility to generate active auth token ---
 def get_auth_token(client) -> str:
     """

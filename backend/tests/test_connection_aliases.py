@@ -192,6 +192,31 @@ def test_alias_rejects_duplicate_token(client, db):
     assert "already exists" in duplicate.json()["detail"].lower()
 
 
+def test_alias_normalizes_spaced_token_on_save(client, db):
+    headers = _auth_headers(client)
+    temp_db_path = _create_db_with_orders()
+    create_conn = client.post(
+        "/api/v1/connections/",
+        json={"name": "Alias DB spaced", "db_type": "sqlite", "database_name": temp_db_path},
+        headers=headers,
+    )
+    connection_id = create_conn.json()["id"]
+    _seed_schema_cache(db, connection_id)
+
+    response = client.post(
+        f"/api/v1/connections/{connection_id}/aliases",
+        json={
+            "alias_type": "column",
+            "alias_token": "order amount",
+            "target_table": "orders",
+            "target_column": "price",
+        },
+        headers=headers,
+    )
+    assert response.status_code == status.HTTP_201_CREATED
+    assert response.json()["alias_token"] == "order_amount"
+
+
 def test_alias_requires_synced_schema(client, db):
     headers = _auth_headers(client)
     user_id = client.get("/api/v1/auth/me", headers=headers).json()["id"]
@@ -218,6 +243,32 @@ def test_alias_requires_synced_schema(client, db):
     )
     assert response.status_code == status.HTTP_400_BAD_REQUEST
     assert "sync schema" in response.json()["detail"].lower()
+
+
+def test_alias_suggestions_after_schema_cache(client, db):
+    headers = _auth_headers(client)
+    temp_db_path = _create_db_with_orders()
+    create_conn = client.post(
+        "/api/v1/connections/",
+        json={"name": "Alias Suggestions DB", "db_type": "sqlite", "database_name": temp_db_path},
+        headers=headers,
+    )
+    connection_id = create_conn.json()["id"]
+    _seed_schema_cache(db, connection_id)
+
+    response = client.get(
+        f"/api/v1/connections/{connection_id}/aliases/suggestions",
+        headers=headers,
+    )
+    assert response.status_code == status.HTTP_200_OK
+    suggestions = response.json()
+    assert len(suggestions) >= 1
+    tokens = {item["alias_token"] for item in suggestions}
+    assert "customer" in tokens or "revenue" in tokens
+
+    client.delete(f"/api/v1/connections/{connection_id}", headers=headers)
+    if os.path.exists(temp_db_path):
+        os.remove(temp_db_path)
 
 
 def test_connection_delete_cascades_aliases(client, db):

@@ -40,7 +40,7 @@ def test_detect_false_confidence():
 
 def test_load_eval_cases():
     cases = load_eval_cases()
-    assert len(cases) >= 15
+    assert len(cases) >= 50
     categories = {c.category for c in cases}
     assert "core" in categories
     assert "paraphrase" in categories
