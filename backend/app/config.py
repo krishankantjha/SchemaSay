@@ -24,7 +24,8 @@ class Settings(BaseSettings):
     OPENAI_MODEL: str = "gpt-4o-mini"
     GEMINI_MODEL: str = "gemini-3.6-flash"
     GEMINI_BASE_URL: str = "https://generativelanguage.googleapis.com/v1beta/openai/"
-    LLM_TIMEOUT_SECONDS: float = 20.0
+    LLM_TIMEOUT_SECONDS: float = 12.0
+    SCHEMA_CACHE_TTL_SECONDS: int = 600
     
     # Fernet symmetric encryption key for storing database credentials. Generate with: Fernet.generate_key()
     ENCRYPTION_KEY: str
@@ -54,6 +55,9 @@ class Settings(BaseSettings):
     LEARNING_MAX_EXAMPLES: int = 3
     LEARNING_MIN_SIMILARITY: float = 0.2
     LEARNING_DIRECT_MATCH_THRESHOLD: float = 0.75
+
+    # Heuristic L3 validation — slightly lower bar so grouped/time queries execute without LLM
+    HEURISTIC_L3_MIN_CONFIDENCE: float = 0.52
 
     # Connector security policy. Remote hosts are public-only unless explicitly allowlisted.
     ALLOWED_DB_HOSTS: str = ""
