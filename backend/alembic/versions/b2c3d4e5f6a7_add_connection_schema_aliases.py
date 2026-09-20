@@ -10,6 +10,8 @@ from typing import Sequence, Union
 from alembic import op
 import sqlalchemy as sa
 
+from migration_utils import has_index, has_table
+
 
 revision: str = "b2c3d4e5f6a7"
 down_revision: Union[str, Sequence[str], None] = "a1b2c3d4e5f6"
@@ -17,26 +19,8 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
-def _has_table(table: str) -> bool:
-    bind = op.get_bind()
-    rows = bind.execute(
-        sa.text("SELECT name FROM sqlite_master WHERE type='table' AND name=:name"),
-        {"name": table},
-    ).fetchall()
-    return bool(rows)
-
-
-def _has_index(index_name: str) -> bool:
-    bind = op.get_bind()
-    rows = bind.execute(
-        sa.text("SELECT name FROM sqlite_master WHERE type='index' AND name=:name"),
-        {"name": index_name},
-    ).fetchall()
-    return bool(rows)
-
-
 def upgrade() -> None:
-    if not _has_table("connection_schema_aliases"):
+    if not has_table("connection_schema_aliases"):
         op.create_table(
             "connection_schema_aliases",
             sa.Column("id", sa.Integer(), nullable=False),
@@ -55,14 +39,14 @@ def upgrade() -> None:
             sa.PrimaryKeyConstraint("id"),
         )
 
-    if not _has_index("ix_connection_schema_aliases_connection_id"):
+    if not has_index("connection_schema_aliases", "ix_connection_schema_aliases_connection_id"):
         op.create_index(
             op.f("ix_connection_schema_aliases_connection_id"),
             "connection_schema_aliases",
             ["connection_id"],
             unique=False,
         )
-    if not _has_index("ix_connection_schema_aliases_alias_token"):
+    if not has_index("connection_schema_aliases", "ix_connection_schema_aliases_alias_token"):
         op.create_index(
             op.f("ix_connection_schema_aliases_alias_token"),
             "connection_schema_aliases",
@@ -72,15 +56,15 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    if _has_index("ix_connection_schema_aliases_alias_token"):
+    if has_index("connection_schema_aliases", "ix_connection_schema_aliases_alias_token"):
         op.drop_index(
             op.f("ix_connection_schema_aliases_alias_token"),
             table_name="connection_schema_aliases",
         )
-    if _has_index("ix_connection_schema_aliases_connection_id"):
+    if has_index("connection_schema_aliases", "ix_connection_schema_aliases_connection_id"):
         op.drop_index(
             op.f("ix_connection_schema_aliases_connection_id"),
             table_name="connection_schema_aliases",
         )
-    if _has_table("connection_schema_aliases"):
+    if has_table("connection_schema_aliases"):
         op.drop_table("connection_schema_aliases")
