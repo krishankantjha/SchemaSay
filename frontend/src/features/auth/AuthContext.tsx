@@ -9,6 +9,7 @@ import {
 } from "react";
 import { authApi } from "@/lib/api/endpoints";
 import {
+  getAccessToken,
   getRefreshToken,
   setAccessToken,
   setRefreshToken,
@@ -33,24 +34,37 @@ function applyTokens(access: string, refresh: string) {
   setRefreshToken(refresh);
 }
 
+/** Deduplicate concurrent refresh calls (StrictMode, parallel 401 retries). */
+let refreshInFlight: Promise<string | null> | null = null;
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   const refreshSession = useCallback(async (): Promise<string | null> => {
-    const stored = getRefreshToken();
-    if (!stored) return null;
-
-    try {
-      const tokens = await authApi.refresh(stored);
-      applyTokens(tokens.access_token, tokens.refresh_token);
-      return tokens.access_token;
-    } catch {
-      setAccessToken(null);
-      setRefreshToken(null);
-      setUser(null);
-      return null;
+    if (refreshInFlight) {
+      return refreshInFlight;
     }
+
+    refreshInFlight = (async (): Promise<string | null> => {
+      const stored = getRefreshToken();
+      if (!stored) return null;
+
+      try {
+        const tokens = await authApi.refresh(stored);
+        applyTokens(tokens.access_token, tokens.refresh_token);
+        return tokens.access_token;
+      } catch {
+        setAccessToken(null);
+        setRefreshToken(null);
+        setUser(null);
+        return null;
+      } finally {
+        refreshInFlight = null;
+      }
+    })();
+
+    return refreshInFlight;
   }, []);
 
   useEffect(() => {
@@ -61,13 +75,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     async function bootstrap() {
       const stored = getRefreshToken();
-      if (!stored) {
+      if (!stored && !getAccessToken()) {
         setIsLoading(false);
         return;
       }
 
       try {
-        const token = await refreshSession();
+        const token = getAccessToken() ?? (await refreshSession());
         if (token) {
           const profile = await authApi.me();
           setUser(profile);

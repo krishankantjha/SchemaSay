@@ -224,9 +224,20 @@ export function RegisterPage() {
                   className="mt-0.5 h-4 w-4 rounded border-border-default accent-accent"
                 />
                 <span>
-                  I agree to the Terms of Service and Privacy Policy
+                  I agree to the{" "}
+                  <Link to="/terms" className="font-medium text-accent hover:text-accent-hover">
+                    Terms of Service
+                  </Link>{" "}
+                  and{" "}
+                  <Link to="/privacy" className="font-medium text-accent hover:text-accent-hover">
+                    Privacy Policy
+                  </Link>
                 </span>
               </label>
+              <p className="mt-1.5 text-xs text-text-muted">
+                SchemaSay runs read-only queries on databases you connect. Do not use production
+                secrets without reviewing these policies.
+              </p>
               {fieldErrors.terms ? (
                 <p id="terms-error" className="mt-1.5 text-xs text-danger" role="alert">
                   {fieldErrors.terms}

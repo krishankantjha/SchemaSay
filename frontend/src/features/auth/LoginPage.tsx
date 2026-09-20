@@ -154,6 +154,15 @@ export function LoginPage() {
               Create one
             </Link>
           </p>
+          <p className="mt-3 text-center text-xs text-text-muted">
+            <Link to="/terms" className="hover:text-text-secondary">
+              Terms
+            </Link>
+            {" · "}
+            <Link to="/privacy" className="hover:text-text-secondary">
+              Privacy
+            </Link>
+          </p>
         </div>
       </AuthCard>
     </AuthLayout>
